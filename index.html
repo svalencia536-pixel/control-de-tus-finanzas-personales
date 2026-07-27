@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>💰 Finanzas Sergio & Katherin</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+/* Se aplica antes de pintar la página para que no haya un destello blanco
+   al abrirla de noche. Tres estados: auto (sigue al sistema), claro y oscuro. */
+(function(){
+  var t = localStorage.getItem('finTema') || 'auto';
+  if (t !== 'auto') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -12,9 +20,18 @@
   --ok:#10b981; --warn:#f59e0b; --bad:#ef4444;
   --bg:#f1f5f9; --card:#ffffff; --tx:#0f172a; --tx2:#64748b; --bd:#e2e8f0;
 }
+/* Oscuro automático: sigue la configuración del teléfono o del PC */
 @media (prefers-color-scheme:dark){
   :root{--bg:#0b1120;--card:#151d2e;--tx:#f1f5f9;--tx2:#94a3b8;--bd:#26324a}
 }
+/* La elección manual manda sobre la del sistema, en ambos sentidos */
+:root[data-tema="claro"]{--bg:#f1f5f9;--card:#ffffff;--tx:#0f172a;--tx2:#64748b;--bd:#e2e8f0}
+:root[data-tema="oscuro"]{--bg:#0b1120;--card:#151d2e;--tx:#f1f5f9;--tx2:#94a3b8;--bd:#26324a}
+html,body{background:var(--bg);color:var(--tx)}
+.tema{background:rgba(255,255,255,.18);border:none;color:#fff;cursor:pointer;font-size:12px;
+  font-weight:700;padding:6px 11px;border-radius:20px;font-family:inherit;white-space:nowrap}
+.tema:hover{background:rgba(255,255,255,.3)}
+.hdacc{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--tx);padding:12px;min-height:100vh}
 .wrap{max-width:1150px;margin:0 auto}
 header{background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;padding:18px 20px;border-radius:14px;margin-bottom:14px}
@@ -139,7 +156,10 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
       <h1>💰 Finanzas Sergio &amp; Katherin</h1>
       <p id="hdSub">Control de gastos e ingresos</p>
     </div>
-    <div id="estado" class="est"><i></i><span>…</span></div>
+    <div class="hdacc">
+      <button id="btnTema" class="tema" onclick="cambiarTema()" title="Cambiar entre claro y oscuro">🌗 Auto</button>
+      <div id="estado" class="est"><i></i><span>…</span></div>
+    </div>
   </div>
 </header>
 
@@ -362,6 +382,26 @@ const presSub=(t,c,s)=>{const g=CFG[t][c];if(!g)return 0;const x=g.subs.find(a=>
 /* presupuesto de una categoría = suma de sus subcategorías */
 const presCat=(t,c)=>CFG[t][c]?CFG[t][c].subs.reduce((a,b)=>a+(+b.p||0),0):0;
 const presTotal=t=>Object.keys(CFG[t]).reduce((a,c)=>a+presCat(t,c),0);
+
+/* ================= TEMA CLARO / OSCURO ================= */
+const TEMAS=[
+  {v:'auto',  t:'🌗 Auto'},
+  {v:'claro', t:'☀️ Claro'},
+  {v:'oscuro',t:'🌙 Oscuro'}
+];
+function pintarTema(){
+  const v=localStorage.getItem('finTema')||'auto';
+  if(v==='auto') document.documentElement.removeAttribute('data-tema');
+  else document.documentElement.setAttribute('data-tema',v);
+  const b=document.getElementById('btnTema');
+  if(b) b.textContent=(TEMAS.find(x=>x.v===v)||TEMAS[0]).t;
+}
+function cambiarTema(){
+  const v=localStorage.getItem('finTema')||'auto';
+  const i=TEMAS.findIndex(x=>x.v===v);
+  localStorage.setItem('finTema',TEMAS[(i+1)%TEMAS.length].v);
+  pintarTema();
+}
 
 /* ================= NAVEGACIÓN ================= */
 document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{
@@ -949,6 +989,7 @@ async function sesionLista(user){
 }
 
 /* ================= INIT ================= */
+pintarTema();
 document.getElementById('fFecha').value=hoy();
 setTipo('gasto');
 render();
