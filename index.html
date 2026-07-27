@@ -99,6 +99,10 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
 .est i{width:7px;height:7px;border-radius:50%;background:currentColor;display:block}
 .hd{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
 .err{font-size:12px;color:var(--bad);font-weight:600;margin-top:8px;line-height:1.5}
+.sep{display:flex;align-items:center;gap:10px;margin:18px 0 12px;color:var(--tx2);font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+.sep::before,.sep::after{content:"";flex:1;height:1px;background:var(--bd)}
+.btn.demo{background:var(--ok)}
+.pie{font-size:11px;color:var(--tx2);line-height:1.5;margin-top:10px;text-align:center}
 </style>
 </head>
 <body>
@@ -111,6 +115,9 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
   <button class="btn" onclick="guardarConexion()">Conectar</button>
   <div id="errSetup" class="err"></div>
   <div style="text-align:center"><button class="lnk" onclick="modoLocal()">Usar sin nube, solo en este dispositivo</button></div>
+  <div class="sep"><span>o si solo quieres verla</span></div>
+  <button class="btn demo" onclick="demo()">👀 Ver demostración con datos de ejemplo</button>
+  <p class="pie">Entra sin registrarte. Verás un mes real cargado para explorar los tableros. Nada se guarda en ningún servidor.</p>
 </div></div>
 
 <!-- ===== Pantalla 2: entrar a la cuenta del hogar ===== -->
@@ -877,6 +884,26 @@ function modoLocal(){
   NUBE.on=false;
   estado('solo este equipo','#fde68a');
   document.getElementById('hdSub').textContent='Control de gastos e ingresos · datos solo en este dispositivo';
+}
+/* Demostración: entra sin registro, con un mes de ejemplo ya cargado.
+   Pensada para mostrar la app a alguien en el celular sin explicarle nada. */
+function demo(){
+  NUBE.on=false;
+  ov('ovSetup',false); ov('ovLogin',false);
+  estado('demostración','#fde68a');
+  document.getElementById('hdSub').innerHTML=
+    'Datos de ejemplo · <button class="lnk" style="color:#fff" onclick="salirDemo()">empezar de cero</button>';
+  if(!TX.length) seed();
+  document.getElementById('alerts').innerHTML='';
+  document.querySelectorAll('.nav button')[1].click();
+  const sel=document.getElementById('mesSel');
+  if([...sel.options].some(o=>o.value==='2025-12')){ sel.value='2025-12'; render(); }
+  window.scrollTo(0,0);
+}
+function salirDemo(){
+  if(!confirm('Se borran los datos de ejemplo y empiezas con la app vacía. ¿Continuar?'))return;
+  localStorage.clear();
+  location.reload();
 }
 async function entrar(){
   const err=document.getElementById('errLogin'); err.textContent='';
