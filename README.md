@@ -1,4 +1,4 @@
-# 💰 Finanzas Hogar
+# 💰 Finanzas Personales
 
 Aplicación web para llevar el presupuesto de un hogar entre dos personas, con datos compartidos en tiempo real.
 
