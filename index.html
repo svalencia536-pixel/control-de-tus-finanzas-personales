@@ -37,9 +37,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 header{background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;padding:18px 20px;border-radius:14px;margin-bottom:14px}
 header h1{font-size:21px;margin-bottom:3px}
 header p{font-size:12px;opacity:.85}
-.nav{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;background:var(--card);padding:8px;border-radius:12px;border:1px solid var(--bd)}
-.nav button{padding:9px 14px;border:none;background:transparent;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;color:var(--tx2);white-space:nowrap;font-family:inherit}
+/* Menú lateral vertical en PC; en pantallas angostas pasa a fila arriba */
+.shell{display:grid;grid-template-columns:212px minmax(0,1fr);gap:14px;align-items:start}
+.main{min-width:0}
+.nav{display:flex;flex-direction:column;gap:5px;background:var(--card);padding:8px;
+     border-radius:12px;border:1px solid var(--bd);position:sticky;top:12px}
+.nav button{padding:11px 14px;border:none;background:transparent;border-radius:8px;cursor:pointer;
+     font-weight:600;font-size:13px;color:var(--tx2);white-space:nowrap;font-family:inherit;
+     text-align:left;width:100%}
+.nav button:hover{background:var(--bg)}
 .nav button.on{background:var(--p);color:#fff}
+@media(max-width:860px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .nav{flex-direction:row;overflow-x:auto;position:static;margin-bottom:0}
+  .nav button{width:auto;padding:9px 14px}
+}
 .pane{display:none}.pane.on{display:block}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px;margin-bottom:14px}
 .card h2{font-size:15px;margin-bottom:14px}
@@ -120,6 +132,24 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
 .sep::before,.sep::after{content:"";flex:1;height:1px;background:var(--bd)}
 .btn.demo{background:var(--ok)}
 .pie{font-size:11px;color:var(--tx2);line-height:1.5;margin-top:10px;text-align:center}
+/* ---- instructivo ---- */
+.g-int{font-size:14px;line-height:1.7;color:var(--tx2)}
+.g-t{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:800;margin-bottom:12px}
+.g-n{background:var(--p);color:#fff;width:26px;height:26px;border-radius:50%;display:grid;
+     place-items:center;font-size:13px;flex:none}
+.g-p{font-size:13.5px;line-height:1.75;margin-bottom:11px}
+.g-l{font-size:13.5px;line-height:1.75;margin:0 0 11px 20px}
+.g-l li{margin-bottom:6px}
+.g-key{background:var(--bg);border:1px solid var(--bd);border-radius:9px;padding:14px;margin:12px 0;
+       font-size:13px;line-height:1.9}
+.g-k1{font-weight:800}
+.g-k2{font-weight:800;color:var(--p);padding-left:16px}
+.g-key span{font-weight:500;color:var(--tx2)}
+.g-tip{background:rgba(99,102,241,.1);border-left:4px solid var(--p);border-radius:8px;padding:12px 14px;
+       font-size:13px;line-height:1.65;margin-top:12px}
+.g-tip.warn{background:rgba(245,158,11,.12);border-color:var(--warn)}
+.g-c{font-weight:800}
+.g-c.ok{color:var(--ok)}.g-c.wr{color:var(--warn)}.g-c.bd{color:var(--bad)}
 </style>
 </head>
 <body>
@@ -163,13 +193,16 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
   </div>
 </header>
 
-<div class="nav">
+<div class="shell">
+<nav class="nav">
   <button class="on" data-t="reg">➕ Registrar</button>
   <button data-t="dash">📊 Dashboard</button>
   <button data-t="cat">🏷️ Categorías</button>
   <button data-t="hist">📜 Historial</button>
   <button data-t="ana">📈 Análisis</button>
-</div>
+  <button data-t="guia">📖 Instructivo</button>
+</nav>
+<main class="main">
 
 <!-- REGISTRAR -->
 <div id="reg" class="pane on">
@@ -263,6 +296,69 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
   <div class="card"><h2>💡 Diagnóstico y recomendaciones</h2><div id="diag"></div></div>
 </div>
 
+<!-- INSTRUCTIVO -->
+<div id="guia" class="pane">
+  <div class="card">
+    <h2>📖 Cómo usar la app</h2>
+    <p class="g-int">Está pensada para que registrar un gasto te tome menos de diez segundos. Lo demás —los cálculos, los tableros y las alertas— se hace solo.</p>
+  </div>
+
+  <div class="card">
+    <div class="g-t"><span class="g-n">1</span> Antes que nada: define tus presupuestos</div>
+    <p class="g-p">Ve a <b>🏷️ Categorías</b> y pulsa <b>✏️ Editar maestros</b>. Ahí creas tu estructura:</p>
+    <div class="g-key">
+      <div class="g-k1">📁 CATEGORÍA PADRE <span>— agrupa, no lleva presupuesto propio</span></div>
+      <div class="g-k2">└─ SUBCATEGORÍA <span>— aquí SÍ va el presupuesto</span></div>
+    </div>
+    <p class="g-p"><b>El presupuesto vive en la subcategoría, no en la categoría.</b> La categoría padre suma sola lo de sus subcategorías. Por ejemplo: si <i>Costo de vida</i> tiene <i>Arriendo</i> con $1.000.000 y <i>Alimentación</i> con $1.000.000, la categoría muestra $2.000.000 sin que tú lo calcules.</p>
+    <p class="g-p">Cada gasto que registres se compara contra el presupuesto de <b>su</b> subcategoría. Por eso una subcategoría sin presupuesto no te sirve para controlar: no hay contra qué comparar.</p>
+    <div class="g-tip">💡 Al renombrar una categoría o subcategoría, los movimientos ya registrados se actualizan solos. No pierdes historial.</div>
+  </div>
+
+  <div class="card">
+    <div class="g-t"><span class="g-n">2</span> Registra el día a día</div>
+    <p class="g-p">En <b>➕ Registrar</b> eliges si es gasto o ingreso, la categoría, la subcategoría, el monto y la cuenta. El detalle es opcional pero ayuda a recordar en qué se fue el dinero.</p>
+    <p class="g-p">Apenas eliges la subcategoría, debajo del formulario aparece <b>cuánto llevas gastado y cuánto te queda disponible</b> este mes en esa subcategoría. Así decides antes de gastar, no después.</p>
+    <div class="g-tip">💡 El truco no es la app, es el hábito. Registra el mismo día. Si dejas acumular una semana, se te olvidan los gastos pequeños, que son justamente los que descuadran el presupuesto.</div>
+  </div>
+
+  <div class="card">
+    <div class="g-t"><span class="g-n">3</span> Revisa cómo vas</div>
+    <p class="g-p"><b>📊 Dashboard</b> — Elige el mes arriba y ves ingresos, gastos, ahorro y promedio diario. El gráfico circular muestra en qué categorías se concentra el gasto, y las barras comparan cada subcategoría contra su presupuesto: <span class="g-c ok">verde</span> vas bien, <span class="g-c wr">amarillo</span> pasas del 85%, <span class="g-c bd">rojo</span> te excediste.</p>
+    <p class="g-p"><b>🏷️ Categorías</b> — El detalle completo: cuánto llevas y cuánto te queda en cada subcategoría.</p>
+    <p class="g-p"><b>📜 Historial</b> — Todos los movimientos, con filtros por fecha, categoría y tipo. Desde aquí exportas y respaldas.</p>
+    <p class="g-p"><b>📈 Análisis</b> — Tu tasa de ahorro, la evolución mes a mes y un diagnóstico que te dice dónde estás perdiendo dinero y cuánto liberarías si lo corriges.</p>
+  </div>
+
+  <div class="card">
+    <div class="g-t"><span class="g-n">4</span> Cuida tus datos</div>
+    <p class="g-p">En <b>📜 Historial</b> tienes tres botones importantes:</p>
+    <ul class="g-l">
+      <li><b>Exportar CSV</b> — para abrirlo en Excel y hacer tus propios análisis.</li>
+      <li><b>Respaldar todo (JSON)</b> — copia completa de movimientos y presupuestos. <b>Hazlo antes de cualquier cambio grande.</b></li>
+      <li><b>Restaurar respaldo</b> — recupera desde un archivo guardado.</li>
+    </ul>
+    <div class="g-tip warn">⚠️ Si trabajas <b>sin nube</b>, los datos viven únicamente en este navegador. Si borras el caché o cambias de equipo, se pierden. Respalda de vez en cuando.</div>
+  </div>
+
+  <div class="card">
+    <div class="g-t"><span class="g-n">5</span> Compartir con tu pareja</div>
+    <p class="g-p">Conectando la app a la nube, ambos ven el mismo presupuesto desde cualquier dispositivo, y lo que registra uno le aparece al otro al instante.</p>
+    <p class="g-p">Los dos entran con <b>el mismo correo y la misma contraseña</b>: es una sola cuenta del hogar, no dos cuentas separadas.</p>
+    <div class="g-tip">💡 En el celular, abre el menú del navegador y elige <b>«Agregar a pantalla de inicio»</b>. Queda con ícono propio y se abre como una app normal.</div>
+  </div>
+
+  <div class="card">
+    <div class="g-t"><span class="g-n">?</span> Preguntas frecuentes</div>
+    <p class="g-p"><b>Registré un gasto en la categoría equivocada.</b><br>Bórralo en Historial con el ícono 🗑 y regístralo de nuevo. Toma dos segundos.</p>
+    <p class="g-p"><b>Me excedí en una subcategoría. ¿Qué hago?</b><br>Decide cuál de las dos cosas es cierta: o el gasto fue puntual y toca recortar el próximo mes, o el presupuesto era irreal y toca subirlo. Un presupuesto que incumples todos los meses no te está sirviendo de nada.</p>
+    <p class="g-p"><b>Tengo muchos «gastos imprevistos».</b><br>Casi siempre son gastos previsibles mal clasificados. Míralos uno por uno y crea las subcategorías que hagan falta: ahí es donde el presupuesto empieza a funcionar de verdad.</p>
+    <p class="g-p"><b>¿Cuánto debería ahorrar?</b><br>Una referencia sana es el 25% de los ingresos. Si estás por debajo, el diagnóstico de <b>📈 Análisis</b> te señala en qué subcategorías está la fuga.</p>
+  </div>
+</div>
+
+</main>
+</div>
 </div>
 <script>
 /* ============ MAESTROS POR DEFECTO (presupuesto en la subcategoría) ============ */
