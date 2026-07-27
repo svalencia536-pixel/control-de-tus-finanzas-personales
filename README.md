@@ -34,11 +34,21 @@ Todas las cifras se muestran en pesos con separador de miles y sin decimales.
 
 > Supabase pide confirmar el correo por defecto. Para saltarte ese paso: **Authentication → Sign In / Providers → Email** y desactiva *Confirm email*.
 
-## Publicar en GitHub Pages
+## Publicar
 
-En el repositorio: **Settings → Pages → Source: Deploy from a branch → Branch: `main` / `root`**.
+### Railway (recomendado)
 
-Queda publicada en `https://<usuario>.github.io/<repositorio>/`.
+El repositorio trae `Dockerfile` y `Caddyfile`: Railway detecta el Dockerfile y sirve el sitio sin más configuración.
+
+1. En Railway: **New Project → Deploy from GitHub repo** y elige este repositorio.
+2. Cuando termine el build, entra al servicio → **Settings → Networking → Generate Domain**.
+3. Para dominio propio: **Custom Domain** y apunta el CNAME que Railway te indique.
+
+No hay que definir variables de entorno: Railway inyecta `PORT` y el `Caddyfile` la toma sola.
+
+### GitHub Pages (alternativa gratuita)
+
+**Settings → Pages → Source: Deploy from a branch → Branch: `main` / `root`**. Requiere repositorio público. Queda en `https://<usuario>.github.io/<repositorio>/`.
 
 ## Nota sobre el código
 
@@ -49,6 +59,9 @@ Es una aplicación de un solo archivo que corre completa en el navegador; no hay
 ```
 index.html            La aplicación completa (HTML, CSS y JS en un solo archivo)
 supabase_setup.sql    Esquema de base de datos, seguridad y tiempo real
+Dockerfile            Imagen de despliegue (Caddy sirviendo el estático)
+Caddyfile             Configuración del servidor web
+railway.json          Le indica a Railway que construya con el Dockerfile
 ```
 
 Sin dependencias que instalar. La única librería externa es el cliente de Supabase, que se carga desde CDN.
