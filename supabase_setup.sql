@@ -24,8 +24,14 @@ create index if not exists movimientos_user_fecha_idx
 create table if not exists public.maestros (
   user_id     uuid primary key references auth.users on delete cascade,
   cfg         jsonb not null,
+  patrimonio  jsonb not null default '{"activos":[],"pasivos":[],"historia":{}}'::jsonb,
   updated_at  timestamptz not null default now()
 );
+
+-- Si ya habías creado la tabla antes, esta línea agrega la columna nueva:
+alter table public.maestros
+  add column if not exists patrimonio jsonb not null
+  default '{"activos":[],"pasivos":[],"historia":{}}'::jsonb;
 
 -- ---------- 3. Seguridad a nivel de fila ----------
 -- Cada cuenta solo puede ver y tocar SUS propios datos.

@@ -8,8 +8,22 @@
 <script>
 /* Se aplica antes de pintar la página para que no haya un destello blanco
    al abrirla de noche. Tres estados: auto (sigue al sistema), claro y oscuro. */
+/* Algunos navegadores bloquean el almacenamiento (modo privado de Safari, páginas
+   incrustadas). Sin este envoltorio la app no abriría; así al menos funciona
+   durante la sesión y, si hay nube, los datos igual se guardan allá. */
+window.LS = (function(){
+  var S = null, ok = true, mem = {};
+  try { S = window.localStorage; S.setItem('__p','1'); S.removeItem('__p'); } catch(e){ ok = false; }
+  return {
+    ok:    ok,
+    get:   function(k){ try { return ok ? S.getItem(k) : (k in mem ? mem[k] : null); } catch(e){ return null; } },
+    set:   function(k,v){ try { ok ? S.setItem(k,v) : (mem[k]=v); } catch(e){ mem[k]=v; } },
+    del:   function(k){ try { ok ? S.removeItem(k) : delete mem[k]; } catch(e){ delete mem[k]; } },
+    clear: function(){ try { ok ? S.clear() : (mem={}); } catch(e){ mem={}; } }
+  };
+})();
 (function(){
-  var t = localStorage.getItem('finTema') || 'auto';
+  var t = LS.get('finTema') || 'auto';
   if (t !== 'auto') document.documentElement.setAttribute('data-tema', t);
 })();
 </script>
@@ -150,6 +164,31 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
 .g-tip.warn{background:rgba(245,158,11,.12);border-color:var(--warn)}
 .g-c{font-weight:800}
 .g-c.ok{color:var(--ok)}.g-c.wr{color:var(--warn)}.g-c.bd{color:var(--bad)}
+/* ---- semáforo de indicadores ---- */
+.sem{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.sm{background:var(--bg);border:1px solid var(--bd);border-left:5px solid;border-radius:10px;padding:14px}
+.sm.v{border-left-color:var(--ok)}.sm.a{border-left-color:var(--warn)}.sm.r{border-left-color:var(--bad)}
+.sm .l{font-size:11px;color:var(--tx2);font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+       display:flex;justify-content:space-between;align-items:center;gap:6px}
+.sm .v2{font-size:23px;font-weight:800;margin:6px 0 3px;letter-spacing:-.5px}
+.sm .d{font-size:11.5px;color:var(--tx2);line-height:1.5}
+.sm .luz{font-size:14px}
+/* ---- filas de activos y pasivos ---- */
+.it{display:flex;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid var(--bd)}
+.it:last-child{border-bottom:none}
+.it .i{flex:1;min-width:0}
+.it .n{font-size:13px;font-weight:700}
+.it .s{font-size:11px;color:var(--tx2);margin-top:2px}
+.it .m{font-weight:800;font-size:14px;white-space:nowrap}
+.it .m.a{color:var(--ok)}.it .m.p{color:var(--bad)}
+.ord{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--bd)}
+.ord:last-child{border-bottom:none}
+.ord .num{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-weight:800;
+          font-size:13px;flex:none;background:var(--bd);color:var(--tx2)}
+.ord.uno .num{background:var(--bad);color:#fff}
+.ord .i{flex:1;min-width:0}
+.ord .n{font-size:13.5px;font-weight:700}
+.ord .s{font-size:11.5px;color:var(--tx2);margin-top:3px}
 </style>
 </head>
 <body>
@@ -199,6 +238,8 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
   <button data-t="dash">📊 Dashboard</button>
   <button data-t="cat">🏷️ Categorías</button>
   <button data-t="hist">📜 Historial</button>
+  <button data-t="pat">🏛️ Patrimonio</button>
+  <button data-t="deu">💳 Plan de deuda</button>
   <button data-t="ana">📈 Análisis</button>
   <button data-t="guia">📖 Instructivo</button>
 </nav>
@@ -289,8 +330,82 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
   <div class="card"><h2 id="histTitle">Movimientos</h2><div id="histList" class="scroll"></div></div>
 </div>
 
+<!-- PATRIMONIO -->
+<div id="pat" class="pane">
+  <div id="patKpis" class="kpis"></div>
+  <div class="card">
+    <h2>📈 Evolución del patrimonio</h2>
+    <div id="patEvol"></div>
+    <div class="hint" style="margin:12px 0 0">
+      Cada vez que cierras un mes se guarda una foto de tus activos y pasivos. La curva muestra
+      si tu patrimonio está creciendo, que es la pregunta de fondo de cualquier finanza personal.
+    </div>
+    <button class="btn sm" onclick="tomarFoto()">📸 Guardar foto del mes actual</button>
+  </div>
+
+  <div class="split">
+    <div class="card">
+      <div class="chead"><div class="t">🟢 Activos <span class="p" id="totActivos"></span></div></div>
+      <div class="hint" style="margin:10px 0">Lo que tienes: ahorros, inversiones, vivienda, vehículos.</div>
+      <div id="listaActivos"></div>
+      <div class="addbox">
+        <div><label>Nombre</label><input id="acNom" placeholder="Ej: Ahorros Bancolombia"></div>
+        <div><label>Tipo</label><select id="acTipo">
+          <option value="liquido">💵 Líquido (disponible ya)</option>
+          <option value="inversion">📈 Inversión</option>
+          <option value="propiedad">🏠 Propiedad</option>
+          <option value="vehiculo">🚗 Vehículo</option>
+          <option value="otro">📦 Otro</option>
+        </select></div>
+        <div><label>Valor ($)</label><input id="acVal" data-money inputmode="numeric" placeholder="0"></div>
+        <button class="btn sm" onclick="addActivo()">➕ Añadir</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="chead"><div class="t">🔴 Pasivos <span class="p" id="totPasivos"></span></div></div>
+      <div class="hint" style="margin:10px 0">Lo que debes. La tasa es clave: define cuál deuda atacar primero.</div>
+      <div id="listaPasivos"></div>
+      <div class="addbox">
+        <div><label>Nombre</label><input id="paNom" placeholder="Ej: Tarjeta de crédito"></div>
+        <div><label>Saldo ($)</label><input id="paSal" data-money inputmode="numeric" placeholder="0"></div>
+        <div><label>Tasa % anual</label><input id="paTas" type="number" step="0.1" min="0" placeholder="28"></div>
+        <div><label>Cuota mensual ($)</label><input id="paCuo" data-money inputmode="numeric" placeholder="0"></div>
+        <button class="btn sm" onclick="addPasivo()">➕ Añadir</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PLAN DE DEUDA -->
+<div id="deu" class="pane">
+  <div class="card">
+    <h2>💳 ¿Cuál deuda atacar primero?</h2>
+    <div class="seg">
+      <button id="estAva" class="on" onclick="setEstrategia('avalancha')">🏔️ Avalancha</button>
+      <button id="estBol" onclick="setEstrategia('bola')">❄️ Bola de nieve</button>
+    </div>
+    <div id="explicaEst" class="hint" style="margin:0"></div>
+    <div class="row" style="margin-top:14px">
+      <div><label>Pago extra mensual ($)</label>
+        <input id="deuExtra" data-money inputmode="numeric" value="0" oninput="renderDeu()"></div>
+    </div>
+    <div class="hint" style="margin:10px 0 0">
+      Cuánto puedes poner <b>por encima</b> de las cuotas mínimas. Al liberarse una deuda, su cuota
+      se suma automáticamente al ataque de la siguiente: es el efecto que acelera todo el plan.
+    </div>
+  </div>
+  <div id="deuKpis" class="kpis"></div>
+  <div class="card"><h2>Orden de ataque</h2><div id="deuOrden"></div></div>
+  <div class="card"><h2>💡 Lectura del plan</h2><div id="deuDiag"></div></div>
+</div>
+
 <!-- ANÁLISIS -->
 <div id="ana" class="pane">
+  <div class="card">
+    <h2>🚦 Indicadores clave</h2>
+    <div id="semaforo" class="sem"></div>
+  </div>
   <div id="anaKpis" class="kpis"></div>
   <div class="card"><h2>Evolución mensual: ingresos vs gastos vs ahorro</h2><div id="evol"></div></div>
   <div class="card"><h2>💡 Diagnóstico y recomendaciones</h2><div id="diag"></div></div>
@@ -395,16 +510,17 @@ const DEFAULT_CFG = {
 };
 const COLORS=['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#06b6d4','#f43f5e','#84cc16'];
 
-let TX  = JSON.parse(localStorage.getItem('finTx')||'[]');
-let CFG = JSON.parse(localStorage.getItem('finCfg')||'null') || JSON.parse(JSON.stringify(DEFAULT_CFG));
+let TX  = JSON.parse(LS.get('finTx')||'[]');
+let CFG = JSON.parse(LS.get('finCfg')||'null') || JSON.parse(JSON.stringify(DEFAULT_CFG));
+let PAT = JSON.parse(LS.get('finPat')||'null') || {activos:[],pasivos:[],historia:{}};
 let tipo='gasto', editMode=false;
 
 /* ================= CAPA DE NUBE =================
    Si hay proyecto configurado y sesión iniciada, los datos viven en Supabase
    y el navegador guarda una copia local por si se va el internet.
    Si no, funciona igual que antes: solo en este dispositivo.        */
-const NUBE = { url:localStorage.getItem('sbUrl')||'', key:localStorage.getItem('sbKey')||'',
-               cli:null, user:null, on:false, local:localStorage.getItem('finLocal')==='1' };
+const NUBE = { url:LS.get('sbUrl')||'', key:LS.get('sbKey')||'',
+               cli:null, user:null, on:false, local:LS.get('finLocal')==='1' };
 
 const nuevoId = () => (crypto.randomUUID ? crypto.randomUUID()
   : 'id-'+Date.now()+'-'+Math.random().toString(16).slice(2));
@@ -414,14 +530,15 @@ function estado(txt,color){
   e.style.color=color; e.querySelector('span').textContent=txt;
 }
 /* guarda en local siempre (caché/offline) */
-const saveLocal=()=>{localStorage.setItem('finTx',JSON.stringify(TX));localStorage.setItem('finCfg',JSON.stringify(CFG));};
+const saveLocal=()=>{LS.set('finTx',JSON.stringify(TX));LS.set('finCfg',JSON.stringify(CFG));
+                     LS.set('finPat',JSON.stringify(PAT));};
 /* save() se mantiene con el mismo nombre para no tocar el resto del código */
 const save=()=>{ saveLocal(); if(NUBE.on) subirMaestros(); };
 
 async function subirMaestros(){
   try{
     const {error}=await NUBE.cli.from('maestros')
-      .upsert({user_id:NUBE.user.id,cfg:CFG,updated_at:new Date().toISOString()});
+      .upsert({user_id:NUBE.user.id,cfg:CFG,patrimonio:PAT,updated_at:new Date().toISOString()});
     if(error) throw error;
   }catch(e){ estado('sin sincronizar','#fca5a5'); }
 }
@@ -441,12 +558,15 @@ async function borrarMovimiento(id){
 async function bajarTodo(){
   const [mv,ms]=await Promise.all([
     NUBE.cli.from('movimientos').select('*').order('fecha',{ascending:false}),
-    NUBE.cli.from('maestros').select('cfg').eq('user_id',NUBE.user.id).maybeSingle()
+    NUBE.cli.from('maestros').select('cfg,patrimonio').eq('user_id',NUBE.user.id).maybeSingle()
   ]);
   if(mv.error) throw mv.error;
   TX = (mv.data||[]).map(r=>({id:r.id,tipo:r.tipo,fecha:r.fecha,cat:r.cat,
         sub:r.sub,monto:+r.monto,cuenta:r.cuenta||'',det:r.det||''}));
-  if(ms.data && ms.data.cfg) CFG=ms.data.cfg; else await subirMaestros();
+  if(ms.data && ms.data.cfg){
+    CFG=ms.data.cfg;
+    if(ms.data.patrimonio) PAT=ms.data.patrimonio;
+  } else await subirMaestros();
   saveLocal();
 }
 function escucharCambios(){
@@ -479,6 +599,226 @@ const presSub=(t,c,s)=>{const g=CFG[t][c];if(!g)return 0;const x=g.subs.find(a=>
 const presCat=(t,c)=>CFG[t][c]?CFG[t][c].subs.reduce((a,b)=>a+(+b.p||0),0):0;
 const presTotal=t=>Object.keys(CFG[t]).reduce((a,c)=>a+presCat(t,c),0);
 
+/* ================= PATRIMONIO: ACTIVOS Y PASIVOS ================= */
+const TIPOS={liquido:'💵 Líquido',inversion:'📈 Inversión',propiedad:'🏠 Propiedad',
+             vehiculo:'🚗 Vehículo',otro:'📦 Otro'};
+
+const totActivos = () => PAT.activos.reduce((s,a)=>s+(+a.valor||0),0);
+const totPasivos = () => PAT.pasivos.reduce((s,p)=>s+(+p.saldo||0),0);
+const patrimonio = () => totActivos()-totPasivos();
+/* Solo lo que puedes usar ya cuenta como fondo de emergencia: una casa no se vende en una semana */
+const liquidos   = () => PAT.activos.filter(a=>a.tipo==='liquido').reduce((s,a)=>s+(+a.valor||0),0);
+const cuotasMes  = () => PAT.pasivos.reduce((s,p)=>s+(+p.cuota||0),0);
+const savePat    = () => { LS.set('finPat',JSON.stringify(PAT)); if(NUBE.on) subirMaestros(); };
+
+function addActivo(){
+  const n=document.getElementById('acNom').value.trim();
+  const v=parseNum(document.getElementById('acVal').value);
+  if(!n||!v) return alert('Escribe el nombre y un valor mayor a cero.');
+  PAT.activos.push({id:nuevoId(),nombre:n,tipo:document.getElementById('acTipo').value,valor:v});
+  document.getElementById('acNom').value=''; document.getElementById('acVal').value='';
+  savePat(); renderPat();
+}
+function addPasivo(){
+  const n=document.getElementById('paNom').value.trim();
+  const s=parseNum(document.getElementById('paSal').value);
+  if(!n||!s) return alert('Escribe el nombre y un saldo mayor a cero.');
+  PAT.pasivos.push({id:nuevoId(),nombre:n,saldo:s,
+    tasa:parseFloat(document.getElementById('paTas').value)||0,
+    cuota:parseNum(document.getElementById('paCuo').value)});
+  ['paNom','paSal','paTas','paCuo'].forEach(i=>document.getElementById(i).value='');
+  savePat(); renderPat(); renderDeu();
+}
+function delItem(lista,id){
+  if(!confirm('¿Eliminar este registro?'))return;
+  PAT[lista]=PAT[lista].filter(x=>String(x.id)!==String(id));
+  savePat(); renderPat(); renderDeu();
+}
+function tomarFoto(){
+  const mes=mesActivo();
+  PAT.historia[mes]={a:totActivos(),p:totPasivos()};
+  savePat(); renderPat();
+  alert('Foto guardada para '+nomMes(mes)+'.\n\nPatrimonio: '+cop(patrimonio()));
+}
+
+function renderPat(){
+  const a=totActivos(), p=totPasivos(), n=a-p;
+  document.getElementById('totActivos').textContent=cop(a);
+  document.getElementById('totActivos').style.color='var(--ok)';
+  document.getElementById('totPasivos').textContent=cop(p);
+  document.getElementById('totPasivos').style.color='var(--bad)';
+
+  document.getElementById('patKpis').innerHTML=`
+    <div class="kpi ok"><div class="l">Activos</div><div class="v mono">${cop(a)}</div>
+      <div class="s">${PAT.activos.length} registro${PAT.activos.length===1?'':'s'}</div></div>
+    <div class="kpi bad"><div class="l">Pasivos</div><div class="v mono">${cop(p)}</div>
+      <div class="s">${PAT.pasivos.length} deuda${PAT.pasivos.length===1?'':'s'}</div></div>
+    <div class="kpi ${n>=0?'ok':'bad'}"><div class="l">Patrimonio neto</div>
+      <div class="v mono">${cop(n)}</div>
+      <div class="s">${n>=0?'activos menos pasivos':'debes más de lo que tienes'}</div></div>
+    <div class="kpi ${a>0&&p/a<=0.5?'ok':'warn'}"><div class="l">Endeudamiento</div>
+      <div class="v">${a>0?(p/a*100).toFixed(0)+'%':'—'}</div>
+      <div class="s">de tus activos está comprometido</div></div>`;
+
+  document.getElementById('listaActivos').innerHTML = PAT.activos.length
+    ? PAT.activos.map(x=>`<div class="it"><div class="i">
+        <div class="n">${esc(x.nombre)}</div><div class="s">${TIPOS[x.tipo]||x.tipo}</div></div>
+        <div class="m a mono">${cop(x.valor)}</div>
+        <button class="del" onclick="delItem('activos','${x.id}')">🗑</button></div>`).join('')
+    : '<div class="empty">Aún no registras activos</div>';
+
+  document.getElementById('listaPasivos').innerHTML = PAT.pasivos.length
+    ? PAT.pasivos.map(x=>`<div class="it"><div class="i">
+        <div class="n">${esc(x.nombre)}</div>
+        <div class="s">${(+x.tasa||0).toFixed(1)}% anual · cuota ${cop(x.cuota)}</div></div>
+        <div class="m p mono">${cop(x.saldo)}</div>
+        <button class="del" onclick="delItem('pasivos','${x.id}')">🗑</button></div>`).join('')
+    : '<div class="empty">Sin deudas registradas 🎉</div>';
+
+  const ms=Object.keys(PAT.historia).sort();
+  document.getElementById('patEvol').innerHTML = ms.length<2
+    ? '<div class="empty">Guarda la foto de al menos dos meses para ver la curva</div>'
+    : lineaSVG(ms.map(m=>({k:nomMes(m).slice(0,3),v:PAT.historia[m].a-PAT.historia[m].p})),0);
+}
+
+/* ================= PLAN DE DEUDA ================= */
+let estrategia='avalancha';
+function setEstrategia(e){
+  estrategia=e;
+  document.getElementById('estAva').className = e==='avalancha'?'on':'';
+  document.getElementById('estBol').className = e==='bola'?'on g':'';
+  renderDeu();
+}
+/* Simula mes a mes: aplica interés, paga cuotas mínimas y lanza el extra contra
+   la deuda objetivo. Al liberarse una deuda su cuota se suma al extra (efecto bola). */
+function proyectar(pasivos, extraBase, modo){
+  let d=pasivos.filter(x=>+x.saldo>0).map(x=>({n:x.nombre,s:+x.saldo,t:+x.tasa||0,c:+x.cuota||0}));
+  if(!d.length) return null;
+  d.sort(modo==='avalancha' ? (a,b)=>b.t-a.t : (a,b)=>a.s-b.s);
+  const orden=d.map(x=>x.n);
+  let mes=0, interes=0, liberado=0;
+  while(d.some(x=>x.s>0) && mes<600){
+    mes++;
+    for(const x of d){ if(x.s>0){ const i=x.s*(x.t/100/12); interes+=i; x.s+=i; } }
+    for(const x of d){
+      if(x.s<=0) continue;
+      x.s-=Math.min(x.c,x.s);
+      if(x.s<=0.01){ x.s=0; liberado+=x.c; }
+    }
+    let extra=extraBase+liberado;
+    for(const x of d){
+      if(x.s<=0||extra<=0) continue;
+      const pago=Math.min(extra,x.s); x.s-=pago; extra-=pago;
+      if(x.s<=0.01){ x.s=0; liberado+=x.c; }
+      break;
+    }
+    /* Sin cuota ni extra la deuda no bajaría nunca: se corta y se avisa */
+    if(mes>1 && d.every(x=>x.c<=0) && extraBase<=0) return {imposible:true,orden};
+  }
+  return {meses:mes, interes, orden, imposible:mes>=600};
+}
+function renderDeu(){
+  const extra=parseNum(document.getElementById('deuExtra').value);
+  document.getElementById('explicaEst').innerHTML = estrategia==='avalancha'
+    ? '<b>Avalancha:</b> atacas primero la deuda de <b>mayor tasa</b>. Es la que menos intereses te cuesta en total — matemáticamente es la óptima.'
+    : '<b>Bola de nieve:</b> atacas primero la deuda de <b>menor saldo</b>. Pagas algo más de intereses, pero ves deudas desaparecer rápido y eso sostiene la motivación.';
+
+  const base=proyectar(PAT.pasivos,0,estrategia);
+  const con =proyectar(PAT.pasivos,extra,estrategia);
+
+  if(!con){
+    document.getElementById('deuKpis').innerHTML=
+      '<div class="kpi ok"><div class="l">Estado</div><div class="v">Sin deudas</div><div class="s">🎉</div></div>';
+    document.getElementById('deuOrden').innerHTML='<div class="empty">Registra tus deudas en la pestaña Patrimonio</div>';
+    document.getElementById('deuDiag').innerHTML=
+      '<div class="al ok"><span>🎉</span><div><b>No tienes deudas registradas</b>Si es tu situación real, felicitaciones. Enfoca el excedente en construir tu fondo de emergencia y luego en inversión.</div></div>';
+    return;
+  }
+  if(con.imposible){
+    document.getElementById('deuKpis').innerHTML=
+      '<div class="kpi bad"><div class="l">Proyección</div><div class="v">—</div><div class="s">faltan datos</div></div>';
+    document.getElementById('deuOrden').innerHTML='';
+    document.getElementById('deuDiag').innerHTML=
+      '<div class="al warn"><span>⚠️</span><div><b>No se puede proyectar</b>Tus deudas no tienen cuota mensual registrada y el pago extra es cero, así que el saldo nunca bajaría. Ponle cuota a cada deuda en Patrimonio, o define un pago extra aquí.</div></div>';
+    return;
+  }
+
+  const ahorro=base && !base.imposible ? base.interes-con.interes : 0;
+  const anios=Math.floor(con.meses/12), resto=con.meses%12;
+  document.getElementById('deuKpis').innerHTML=`
+    <div class="kpi ${con.meses<=24?'ok':con.meses<=60?'warn':'bad'}">
+      <div class="l">Libre de deudas en</div><div class="v">${con.meses} meses</div>
+      <div class="s">${anios?anios+' año'+(anios>1?'s':'')+(resto?' y '+resto+' meses':''):'menos de un año'}</div></div>
+    <div class="kpi bad"><div class="l">Intereses que pagarás</div>
+      <div class="v mono">${cop(con.interes)}</div><div class="s">con este plan</div></div>
+    <div class="kpi ${ahorro>0?'ok':''}"><div class="l">Intereses que te ahorras</div>
+      <div class="v mono">${cop(ahorro)}</div>
+      <div class="s">${extra>0?'gracias al pago extra':'sube el pago extra para ahorrar'}</div></div>
+    <div class="kpi"><div class="l">Deuda total</div>
+      <div class="v mono">${cop(totPasivos())}</div><div class="s">${PAT.pasivos.length} obligaciones</div></div>`;
+
+  const ord=con.orden.map(n=>PAT.pasivos.find(p=>p.nombre===n)).filter(Boolean);
+  document.getElementById('deuOrden').innerHTML=ord.map((p,i)=>`
+    <div class="ord ${i===0?'uno':''}">
+      <div class="num">${i+1}</div>
+      <div class="i"><div class="n">${esc(p.nombre)}${i===0?' &nbsp;<span style="color:var(--bad);font-size:11px;font-weight:800">← ATACA ESTA</span>':''}</div>
+        <div class="s">${cop(p.saldo)} · ${(+p.tasa||0).toFixed(1)}% anual · cuota ${cop(p.cuota)}</div></div>
+    </div>`).join('');
+
+  const cara=[...PAT.pasivos].sort((a,b)=>(+b.tasa||0)-(+a.tasa||0))[0];
+  let d='';
+  if(cara && +cara.tasa>=25) d+=`<div class="al bad"><span>🚨</span><div><b>${esc(cara.nombre)} te cuesta ${(+cara.tasa).toFixed(1)}% anual</b>A esa tasa, cada mes que pasa sin abonarle de más te cuesta cerca de ${cop(cara.saldo*(+cara.tasa/100/12))} solo en intereses. Es la deuda más cara que tienes: cualquier peso extra rinde más aquí que en cualquier inversión.</div></div>`;
+  if(extra<=0) d+=`<div class="al warn"><span>💡</span><div><b>No has definido pago extra</b>Pagando solo las cuotas mínimas tardarías <b>${base&&!base.imposible?base.meses:'—'} meses</b>. Prueba a subir el pago extra arriba y mira cómo cambian los números: es el ejercicio más rentable de esta herramienta.</div></div>`;
+  else d+=`<div class="al ok"><span>✅</span><div><b>Con ${cop(extra)} extra al mes te ahorras ${cop(ahorro)}</b>Y sales ${base&&!base.imposible?base.meses-con.meses:0} meses antes. Ese ahorro es dinero que no le pagas al banco.</div></div>`;
+  if(estrategia==='bola' && base){
+    const av=proyectar(PAT.pasivos,extra,'avalancha');
+    const dif=av?con.interes-av.interes:0;
+    if(dif>0) d+=`<div class="al warn"><span>🏔️</span><div><b>La avalancha te ahorraría ${cop(dif)} más</b>Bola de nieve cuesta un poco más, pero si te cuesta sostener el plan, ver deudas desaparecer rápido vale ese sobrecosto. Es una decisión tuya, no solo matemática.</div></div>`;
+  }
+  document.getElementById('deuDiag').innerHTML=d;
+}
+
+/* ================= SEMÁFORO DE INDICADORES ================= */
+function luz(v,ok,mal,invertido){
+  const bien = invertido ? v<=ok : v>=ok;
+  const peor = invertido ? v>mal : v<mal;
+  return bien?'v':peor?'r':'a';
+}
+function renderSemaforo(){
+  const mes=mesActivo();
+  const mt=TX.filter(t=>mesDe(t.fecha)===mes);
+  const ing=mt.filter(t=>t.tipo==='ingreso').reduce((s,t)=>s+t.monto,0);
+  const gas=mt.filter(t=>t.tipo==='gasto').reduce((s,t)=>s+t.monto,0);
+
+  const pctDeuda = ing? cuotasMes()/ing*100 : 0;
+  const tasaAhorro = ing? (ing-gas)/ing*100 : 0;
+  const gastoRef = gas || 1;
+  const meses = liquidos()/gastoRef;
+  const pasivos = mt.filter(t=>t.tipo==='ingreso' && esPasivo(t.cat,t.sub)).reduce((s,t)=>s+t.monto,0);
+  const pctPasivo = gas? pasivos/gas*100 : 0;
+
+  const ico={v:'🟢',a:'🟡',r:'🔴'};
+  const items=[
+    {c:luz(pctDeuda,15,30,true), l:'Ingreso destinado a deudas', v:ing?pctDeuda.toFixed(0)+'%':'—',
+     d:'Sano menos del 15%. Crítico por encima del 30%.'},
+    {c:luz(tasaAhorro,15,5), l:'Tasa de ahorro', v:ing?tasaAhorro.toFixed(0)+'%':'—',
+     d:'Sano más del 15%. Crítico por debajo del 5%.'},
+    {c:meses>=3&&meses<=6?'v':meses>6?'v':meses>=1?'a':'r', l:'Fondo de emergencia',
+     v:meses.toFixed(1)+' meses', d:'Sano entre 3 y 6 meses de gasto en activos líquidos.'},
+    {c:luz(pctPasivo,30,10), l:'Gasto cubierto por ingreso pasivo', v:pctPasivo.toFixed(0)+'%',
+     d:'Al llegar al 100% tu vida se paga sola. Marca cuáles ingresos son pasivos en Categorías.'}
+  ];
+  document.getElementById('semaforo').innerHTML=items.map(i=>`
+    <div class="sm ${i.c}">
+      <div class="l"><span>${i.l}</span><span class="luz">${ico[i.c]}</span></div>
+      <div class="v2 mono">${i.v}</div><div class="d">${i.d}</div>
+    </div>`).join('');
+}
+const esPasivo=(c,s)=>{
+  const g=CFG.ingreso[c]; if(!g) return false;
+  const x=g.subs.find(a=>a.n===s); return !!(x&&x.pas);
+};
+
 /* ================= TEMA CLARO / OSCURO ================= */
 const TEMAS=[
   {v:'auto',  t:'🌗 Auto'},
@@ -486,16 +826,16 @@ const TEMAS=[
   {v:'oscuro',t:'🌙 Oscuro'}
 ];
 function pintarTema(){
-  const v=localStorage.getItem('finTema')||'auto';
+  const v=LS.get('finTema')||'auto';
   if(v==='auto') document.documentElement.removeAttribute('data-tema');
   else document.documentElement.setAttribute('data-tema',v);
   const b=document.getElementById('btnTema');
   if(b) b.textContent=(TEMAS.find(x=>x.v===v)||TEMAS[0]).t;
 }
 function cambiarTema(){
-  const v=localStorage.getItem('finTema')||'auto';
+  const v=LS.get('finTema')||'auto';
   const i=TEMAS.findIndex(x=>x.v===v);
-  localStorage.setItem('finTema',TEMAS[(i+1)%TEMAS.length].v);
+  LS.set('finTema',TEMAS[(i+1)%TEMAS.length].v);
   pintarTema();
 }
 
@@ -661,7 +1001,8 @@ function mesActivo(){
   const sel=document.getElementById('mesSel');
   return (sel && sel.value) || mesesDisponibles().pop();
 }
-function render(){ renderRecent(); renderDash(); renderCat(); renderHist(); renderAna(); }
+function render(){ renderRecent(); renderDash(); renderCat(); renderHist(); renderAna();
+                   renderSemaforo(); renderPat(); renderDeu(); }
 
 function renderRecent(){
   const el=document.getElementById('recent');
@@ -753,6 +1094,9 @@ function renderCat(){
               <input data-a="rensub" data-t="${tp}" data-c="${esc(k)}" data-s="${esc(s.n)}" value="${esc(s.n)}">
               <label>Presupuesto mensual ($)</label>
               <input type="text" inputmode="numeric" data-money data-a="pres" data-t="${tp}" data-c="${esc(k)}" data-s="${esc(s.n)}" value="${fmtNum(sp)}">
+              ${tp==='ingreso'?`<label style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:11px;margin:6px 0">
+                 <input type="checkbox" style="width:auto" data-a="pasivo" data-t="${tp}" data-c="${esc(k)}" data-s="${esc(s.n)}" ${s.pas?'checked':''}>
+                 Es ingreso pasivo</label>`:''}
               <button class="btn sm dg" style="width:100%;margin-top:4px" data-a="delsub" data-t="${tp}" data-c="${esc(k)}" data-s="${esc(s.n)}">🗑 Eliminar</button>
             </div>`;
           return `<div class="subc">
@@ -808,6 +1152,7 @@ document.getElementById('catBody').addEventListener('change',e=>{
     save(); render();
   }
   if(a==='pres'){ CFG[tp][c].subs.find(x=>x.n===s).p=parseNum(el.value); save(); render(); }
+  if(a==='pasivo'){ CFG[tp][c].subs.find(x=>x.n===s).pas=el.checked; save(); render(); }
 });
 document.getElementById('catBody').addEventListener('click',e=>{
   const el=e.target.closest('[data-a]'); if(!el) return;
@@ -874,7 +1219,7 @@ function exportCSV(){
     ...[...TX].sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(t=>[t.fecha,t.tipo,t.cat,t.sub,presSub(t.tipo,t.cat,t.sub),t.monto,t.cuenta,t.det||''])];
   bajar('﻿'+rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(';')).join('\n'),'finanzas_'+hoy()+'.csv','text/csv');
 }
-function exportJSON(){ bajar(JSON.stringify({v:1,cfg:CFG,tx:TX},null,2),'respaldo_finanzas_'+hoy()+'.json','application/json'); }
+function exportJSON(){ bajar(JSON.stringify({v:2,cfg:CFG,tx:TX,pat:PAT},null,2),'respaldo finanzas '+hoy()+'.json','application/json'); }
 function importJSON(inp){
   const f=inp.files[0]; if(!f) return;
   const r=new FileReader();
@@ -884,6 +1229,7 @@ function importJSON(inp){
       if(!d.cfg||!d.tx) throw new Error('formato');
       if(!confirm('Esto reemplazará tus categorías y movimientos actuales. ¿Continuar?')) return;
       CFG=d.cfg;
+      if(d.pat) PAT=d.pat;   /* los respaldos v1 no traen patrimonio; se conserva el actual */
       /* se regeneran los identificadores: los respaldos viejos traen números y la nube usa uuid */
       TX=d.tx.map(t=>({...t,id:nuevoId()}));
       saveLocal();
@@ -996,8 +1342,23 @@ function seed(){
     TX.push(mov);
     if(NUBE.on) subirMovimiento(mov);
   });
+  if(!PAT.activos.length && !PAT.pasivos.length){
+    PAT.activos=[
+      {id:nuevoId(),nombre:'Ahorros Bancolombia',tipo:'liquido',valor:8500000},
+      {id:nuevoId(),nombre:'Nequi',tipo:'liquido',valor:1200000},
+      {id:nuevoId(),nombre:'Apartamento',tipo:'propiedad',valor:180000000},
+      {id:nuevoId(),nombre:'Carro',tipo:'vehiculo',valor:42000000}
+    ];
+    PAT.pasivos=[
+      {id:nuevoId(),nombre:'Tarjeta de crédito',saldo:6800000,tasa:29.8,cuota:600000},
+      {id:nuevoId(),nombre:'Crédito de vivienda',saldo:96000000,tasa:12.5,cuota:1280000},
+      {id:nuevoId(),nombre:'Crédito de libre inversión',saldo:11500000,tasa:22.4,cuota:520000}
+    ];
+    PAT.historia={'2025-10':{a:225000000,p:118000000},'2025-11':{a:228500000,p:116100000},
+                  '2025-12':{a:231700000,p:114300000}};
+  }
   saveLocal();
-  alerta('<span>📥</span><div><b>Datos de ejemplo cargados</b>Revisa Dashboard, Categorías y Análisis para ver el sistema completo.</div>','ok');
+  alerta('<span>📥</span><div><b>Datos de ejemplo cargados</b>Recorre Dashboard, Patrimonio, Plan de deuda y Análisis para ver el sistema completo.</div>','ok');
   render();
 }
 
@@ -1010,12 +1371,12 @@ function guardarConexion(){
   const err=document.getElementById('errSetup');
   if(!/^https:\/\/.+\.supabase\.co$/.test(u)) return err.textContent='La URL debe verse así: https://xxxxx.supabase.co';
   if(k.length<30) return err.textContent='La anon key parece incompleta. Cópiala completa desde Project Settings → API.';
-  localStorage.setItem('sbUrl',u); localStorage.setItem('sbKey',k);
-  localStorage.removeItem('finLocal');
+  LS.set('sbUrl',u); LS.set('sbKey',k);
+  LS.del('finLocal');
   location.reload();
 }
 function modoLocal(){
-  localStorage.setItem('finLocal','1');
+  LS.set('finLocal','1');
   ov('ovSetup',false); ov('ovLogin',false);
   NUBE.on=false;
   estado('solo este equipo','#fde68a');
@@ -1038,7 +1399,7 @@ function demo(){
 }
 function salirDemo(){
   if(!confirm('Se borran los datos de ejemplo y empiezas con la app vacía. ¿Continuar?'))return;
-  localStorage.clear();
+  LS.clear();
   location.reload();
 }
 async function entrar(){
@@ -1088,6 +1449,7 @@ async function sesionLista(user){
 pintarTema();
 document.getElementById('fFecha').value=hoy();
 setTipo('gasto');
+setEstrategia('avalancha');
 render();
 
 (async function arranque(){
