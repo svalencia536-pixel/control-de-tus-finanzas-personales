@@ -700,6 +700,11 @@ function evaluar(mes){
   const pres=presTotal('gasto');
   const cumpl=pres?gas/pres*100:0;
 
+  /* Un mes sin movimientos no se puede evaluar. Sin esto sumaría puntos por
+     "cumplir el presupuesto" cuando en realidad no hay con qué compararlo. */
+  if(!mt.length) return {p:0,nota:{t:'Sin datos',c:'warn',e:'📭'},
+                         ing:0,gas:0,ahorro:0,deuda:0,fondo:0,cumpl:0,pres,vacio:true};
+
   let p=0;
   p += ahorro>=20?30 : ahorro>=10?20 : ahorro>=5?10 : 0;
   p += !ing?0 : deuda<15?25 : deuda<=30?15 : 0;
@@ -831,6 +836,7 @@ function renderCierre(){
 
 function recomendar(mes,ev){
   const r=[];
+  if(ev.vacio) return `<div class="al warn"><span>📭</span><div><b>No hay movimientos en ${nomMes(mes)}</b>Sin datos no se puede evaluar nada. Registra tus ingresos y gastos del mes y vuelve a este paso.</div></div>`;
   if(ev.ahorro<5&&ev.ing) r.push(['bad','🚨','Tu tasa de ahorro es crítica',
     `Ahorraste ${ev.ahorro.toFixed(0)}% de lo que ganaste. Por debajo del 5% cualquier imprevisto se convierte en deuda nueva. Empieza por separar el ahorro <b>apenas entra la nómina</b>, no con lo que sobre al final: con lo que sobra nunca sobra.`]);
   else if(ev.ahorro<15&&ev.ing) r.push(['warn','📈','Puedes ahorrar más',
