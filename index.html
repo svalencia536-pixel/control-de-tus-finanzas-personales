@@ -189,6 +189,28 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
 .ord .i{flex:1;min-width:0}
 .ord .n{font-size:13.5px;font-weight:700}
 .ord .s{font-size:11.5px;color:var(--tx2);margin-top:3px}
+/* ---- cierre de mes ---- */
+.conc{background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:13px;margin-bottom:10px}
+.cn{font-size:12.5px;font-weight:800;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.cn span{font-weight:600;color:var(--tx2);font-size:11px}
+.cg{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:8px;margin:10px 0}
+.cg div{font-size:12.5px;font-weight:700}
+.cg b{display:block;font-size:9.5px;color:var(--tx2);text-transform:uppercase;letter-spacing:.4px;
+      font-weight:700;margin-bottom:2px}
+.cr{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.cd{font-size:12.5px;font-weight:800;padding-bottom:10px;white-space:nowrap}
+.sug{display:flex;gap:10px;align-items:flex-end;padding:10px 0;border-bottom:1px solid var(--bd)}
+.sug:last-of-type{border-bottom:none}
+.sug .i{flex:1;min-width:0}
+.sug .n{font-size:12.5px;font-weight:700}
+.sug .s{font-size:11px;color:var(--tx2);margin-top:2px}
+.nota{display:flex;align-items:center;gap:14px;padding:16px;border-radius:11px;border-left:5px solid}
+.nota.ok{background:rgba(16,185,129,.1);border-color:var(--ok)}
+.nota.warn{background:rgba(245,158,11,.1);border-color:var(--warn)}
+.nota.bad{background:rgba(239,68,68,.1);border-color:var(--bad)}
+.ne{font-size:34px;line-height:1}
+.nt{font-size:19px;font-weight:800}
+.np{font-size:12.5px;color:var(--tx2);margin-top:2px}
 </style>
 </head>
 <body>
@@ -235,6 +257,7 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
 <div class="shell">
 <nav class="nav">
   <button class="on" data-t="reg">➕ Registrar</button>
+  <button data-t="cie">✅ Cierre de mes</button>
   <button data-t="dash">📊 Dashboard</button>
   <button data-t="cat">🏷️ Categorías</button>
   <button data-t="hist">📜 Historial</button>
@@ -257,10 +280,7 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
       <div><label id="lCat">Categoría</label><select id="fCat" onchange="fillSub()"></select></div>
       <div><label>Subcategoría</label><select id="fSub" onchange="hintPres()"></select></div>
       <div><label>Monto (COP)</label><input type="text" inputmode="numeric" id="fMonto" placeholder="0" data-money></div>
-      <div><label>Cuenta</label><select id="fCuenta">
-        <option>BANCOLOMBIA SERGIO</option><option>BANCOLOMBIA KATHERIN</option>
-        <option>NEQUI SERGIO</option><option>NEQUI KATHERIN</option>
-        <option>EFECTIVO</option></select></div>
+      <div><label>Cuenta</label><select id="fCuenta"></select></div>
       <div><label>Detalle (opcional)</label><input type="text" id="fDet" placeholder="Ej: mercado D1"></div>
     </div>
     <div id="presHint" class="hint" style="margin:12px 0 0"></div>
@@ -273,6 +293,55 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
   <div class="card">
     <h2>📜 Movimientos recientes</h2>
     <div id="recent" class="scroll"></div>
+  </div>
+</div>
+
+<!-- CIERRE DE MES -->
+<div id="cie" class="pane">
+  <div class="card">
+    <div class="chead">
+      <div class="t">✅ Cierre de mes</div>
+      <div style="min-width:170px"><select id="cieMes" onchange="renderCierre()"></select></div>
+    </div>
+    <div class="hint" style="margin:12px 0 0">
+      Diez minutos al mes. Revisas lo que pasó, cuadras tus cuentas contra el banco,
+      actualizas tu patrimonio, recibes una evaluación y dejas presupuestado el mes siguiente.
+    </div>
+    <div id="cieEstado"></div>
+  </div>
+
+  <div class="card">
+    <div class="g-t"><span class="g-n">1</span> ¿Está todo registrado?</div>
+    <div id="cie1"></div>
+  </div>
+
+  <div class="card">
+    <div class="g-t"><span class="g-n">2</span> Concilia con tu banco</div>
+    <p class="g-p">Escribe el saldo <b>real</b> de cada cuenta al cerrar el mes. Si no cuadra con lo
+    que dice la app, es que falta registrar algo — y ahí está justamente el dinero que se te escapa.</p>
+    <div id="cie2"></div>
+  </div>
+
+  <div class="card">
+    <div class="g-t"><span class="g-n">3</span> Actualiza tu patrimonio</div>
+    <p class="g-p">Ajusta los saldos que cambiaron y guarda la foto del mes para alimentar la curva.</p>
+    <div id="cie3"></div>
+  </div>
+
+  <div class="card">
+    <div class="g-t"><span class="g-n">4</span> Tu evaluación del mes</div>
+    <div id="cie4"></div>
+  </div>
+
+  <div class="card">
+    <div class="g-t"><span class="g-n">5</span> Presupuesta el mes siguiente</div>
+    <p class="g-p">Sugerencias basadas en lo que realmente gastaste. Ajusta lo que quieras y guarda.</p>
+    <div id="cie5"></div>
+  </div>
+
+  <div class="card" style="text-align:center">
+    <button class="btn" id="btnCerrar" onclick="cerrarMes()">🔒 Cerrar el mes</button>
+    <p class="pie">Guarda la foto del patrimonio y marca el mes como cerrado. Puedes reabrirlo cuando quieras.</p>
   </div>
 </div>
 
@@ -512,7 +581,8 @@ const COLORS=['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#06b6d4','#f43f
 
 let TX  = JSON.parse(LS.get('finTx')||'[]');
 let CFG = JSON.parse(LS.get('finCfg')||'null') || JSON.parse(JSON.stringify(DEFAULT_CFG));
-let PAT = JSON.parse(LS.get('finPat')||'null') || {activos:[],pasivos:[],historia:{}};
+let PAT = JSON.parse(LS.get('finPat')||'null') || {activos:[],pasivos:[],historia:{},cierres:{}};
+PAT.historia=PAT.historia||{}; PAT.cierres=PAT.cierres||{};
 let tipo='gasto', editMode=false;
 
 /* ================= CAPA DE NUBE =================
@@ -598,6 +668,240 @@ const presSub=(t,c,s)=>{const g=CFG[t][c];if(!g)return 0;const x=g.subs.find(a=>
 /* presupuesto de una categoría = suma de sus subcategorías */
 const presCat=(t,c)=>CFG[t][c]?CFG[t][c].subs.reduce((a,b)=>a+(+b.p||0),0):0;
 const presTotal=t=>Object.keys(CFG[t]).reduce((a,c)=>a+presCat(t,c),0);
+
+/* ================= CIERRE DE MES ================= */
+const CUENTAS=['BANCOLOMBIA SERGIO','BANCOLOMBIA KATHERIN','NEQUI SERGIO','NEQUI KATHERIN','EFECTIVO'];
+const mesPrevio=m=>{const[y,mm]=m.split('-').map(Number);const d=new Date(y,mm-2,1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');};
+const mesSiguiente=m=>{const[y,mm]=m.split('-').map(Number);const d=new Date(y,mm,1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');};
+const cierreDe=m=>{ PAT.cierres=PAT.cierres||{}; return PAT.cierres[m]||(PAT.cierres[m]={real:{},cerrado:false}); };
+const mesCierre=()=>document.getElementById('cieMes').value||mesActivo();
+
+/* Saldo que la app calcula para una cuenta: lo que traía al cerrar el mes anterior
+   más lo que entró y menos lo que salió durante el mes. */
+function saldoEsperado(cuenta,mes){
+  const prev=(PAT.cierres&&PAT.cierres[mesPrevio(mes)]&&PAT.cierres[mesPrevio(mes)].real[cuenta])||0;
+  const mv=TX.filter(t=>t.cuenta===cuenta&&mesDe(t.fecha)===mes);
+  const ing=mv.filter(t=>t.tipo==='ingreso').reduce((s,t)=>s+t.monto,0);
+  const gas=mv.filter(t=>t.tipo==='gasto').reduce((s,t)=>s+t.monto,0);
+  return {inicial:prev, ing, gas, esperado:prev+ing-gas, movs:mv.length};
+}
+
+/* Calificación de 0 a 100 sobre cuatro dimensiones. Se usa para el semáforo
+   del cierre y para escoger qué recomendar. */
+function evaluar(mes){
+  const mt=TX.filter(t=>mesDe(t.fecha)===mes);
+  const ing=mt.filter(t=>t.tipo==='ingreso').reduce((s,t)=>s+t.monto,0);
+  const gas=mt.filter(t=>t.tipo==='gasto').reduce((s,t)=>s+t.monto,0);
+  const ahorro=ing?(ing-gas)/ing*100:0;
+  const deuda=ing?cuotasMes()/ing*100:0;
+  const fondo=gas?liquidos()/gas:0;
+  const pres=presTotal('gasto');
+  const cumpl=pres?gas/pres*100:0;
+
+  let p=0;
+  p += ahorro>=20?30 : ahorro>=10?20 : ahorro>=5?10 : 0;
+  p += !ing?0 : deuda<15?25 : deuda<=30?15 : 0;
+  p += fondo>=3?25 : fondo>=1?12 : 0;
+  p += !pres?0 : cumpl<=100?20 : cumpl<=110?10 : 0;
+
+  const nota = p>=80?{t:'Excelente',c:'ok',e:'🏆'} : p>=60?{t:'Bien',c:'ok',e:'✅'}
+             : p>=40?{t:'Regular',c:'warn',e:'⚠️'} : {t:'Requiere atención',c:'bad',e:'🚨'};
+  return {p,nota,ing,gas,ahorro,deuda,fondo,cumpl,pres};
+}
+
+function renderCierre(){
+  const sel=document.getElementById('cieMes');
+  const ms=mesesDisponibles(), prev=sel.value;
+  sel.innerHTML=ms.map(m=>`<option value="${m}">${nomMes(m)}</option>`).join('');
+  sel.value = ms.includes(prev)?prev:ms[ms.length-1];
+  const mes=sel.value, c=cierreDe(mes);
+
+  document.getElementById('cieEstado').innerHTML = c.cerrado
+    ? `<div class="al ok" style="margin-top:12px"><span>🔒</span><div><b>${nomMes(mes)} está cerrado</b>Cerrado el ${c.fecha||'—'}. Puedes revisarlo o <button class="lnk" onclick="reabrirMes()">reabrirlo</button> si necesitas ajustar algo.</div></div>`
+    : '';
+  document.getElementById('btnCerrar').textContent = c.cerrado?'🔓 Reabrir el mes':'🔒 Cerrar el mes';
+
+  /* --- Paso 1: constancia del registro --- */
+  const mt=TX.filter(t=>mesDe(t.fecha)===mes);
+  const gastos=mt.filter(t=>t.tipo==='gasto');
+  const dias=new Set(gastos.map(t=>t.fecha)).size;
+  const [y,mm]=mes.split('-').map(Number);
+  const diasMes=new Date(y,mm,0).getDate();
+  const cobertura=diasMes?dias/diasMes*100:0;
+  const ing=mt.filter(t=>t.tipo==='ingreso').reduce((s,t)=>s+t.monto,0);
+  const gas=gastos.reduce((s,t)=>s+t.monto,0);
+  document.getElementById('cie1').innerHTML=`
+    <div class="kpis" style="margin-bottom:12px">
+      <div class="kpi ok"><div class="l">Ingresos</div><div class="v mono">${cop(ing)}</div></div>
+      <div class="kpi bad"><div class="l">Gastos</div><div class="v mono">${cop(gas)}</div></div>
+      <div class="kpi ${ing-gas>=0?'ok':'bad'}"><div class="l">Ahorro</div><div class="v mono">${cop(ing-gas)}</div></div>
+      <div class="kpi ${cobertura>=50?'ok':cobertura>=25?'warn':'bad'}"><div class="l">Días con registro</div>
+        <div class="v">${dias} de ${diasMes}</div><div class="s">${mt.length} movimientos</div></div>
+    </div>
+    ${cobertura<25
+      ? `<div class="al bad"><span>📭</span><div><b>Registro muy espaciado</b>Solo ${dias} día${dias===1?'':'s'} con gastos en todo el mes. Con tan pocos datos las conclusiones no son confiables: lo que falta registrar es justamente lo que no aparece en los tableros.</div></div>`
+      : cobertura<50
+      ? `<div class="al warn"><span>📝</span><div><b>Faltan días por registrar</b>Registraste ${dias} de ${diasMes} días. Revisa tus extractos y completa lo que falte antes de cerrar.</div></div>`
+      : `<div class="al ok"><span>👌</span><div><b>Buen registro</b>${dias} de ${diasMes} días cubiertos. Los números de este mes son confiables.</div></div>`}`;
+
+  /* --- Paso 2: conciliación --- */
+  document.getElementById('cie2').innerHTML = CUENTAS.map(cu=>{
+    const s=saldoEsperado(cu,mes);
+    const real=c.real[cu];
+    const dif=real===undefined?null:real-s.esperado;
+    const col=dif===null?'var(--tx2)':Math.abs(dif)<1000?'var(--ok)':'var(--bad)';
+    return `<div class="conc">
+      <div class="cn">${cu}<span>${s.movs} movimiento${s.movs===1?'':'s'}</span></div>
+      <div class="cg">
+        <div><b>Inicial</b>${cop(s.inicial)}</div>
+        <div><b>Entradas</b><span style="color:var(--ok)">+${cop(s.ing)}</span></div>
+        <div><b>Salidas</b><span style="color:var(--bad)">−${cop(s.gas)}</span></div>
+        <div><b>Según la app</b>${cop(s.esperado)}</div>
+      </div>
+      <div class="cr">
+        <div style="flex:1"><label>Saldo real del banco</label>
+          <input data-money inputmode="numeric" data-cu="${cu}" value="${real!==undefined?fmtNum(real):''}"
+                 placeholder="Escríbelo" onchange="setReal('${cu}',this.value)"></div>
+        <div class="cd" style="color:${col}">${dif===null?'—':(Math.abs(dif)<1000?'✅ Cuadra':(dif>0?'Sobran ':'Faltan ')+cop(Math.abs(dif)))}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  /* --- Paso 3: patrimonio --- */
+  const foto=(PAT.historia||{})[mes];
+  document.getElementById('cie3').innerHTML=`
+    <div class="kpis" style="margin-bottom:12px">
+      <div class="kpi ok"><div class="l">Activos</div><div class="v mono">${cop(totActivos())}</div></div>
+      <div class="kpi bad"><div class="l">Pasivos</div><div class="v mono">${cop(totPasivos())}</div></div>
+      <div class="kpi ${patrimonio()>=0?'ok':'bad'}"><div class="l">Patrimonio</div><div class="v mono">${cop(patrimonio())}</div></div>
+    </div>
+    ${foto?`<div class="al ok"><span>📸</span><div><b>Foto guardada para ${nomMes(mes)}</b>Patrimonio registrado: ${cop(foto.a-foto.p)}. Si actualizaste algo, vuelve a guardarla.</div></div>`
+          :`<div class="al warn"><span>📸</span><div><b>Falta la foto de ${nomMes(mes)}</b>Sin ella no se dibuja la curva de patrimonio.</div></div>`}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button class="btn sm" onclick="tomarFotoMes()">📸 Guardar foto de ${nomMes(mes)}</button>
+      <button class="btn sm sec" onclick="irA('pat')">✏️ Editar activos y pasivos</button>
+    </div>`;
+
+  /* --- Paso 4: evaluación --- */
+  const ev=evaluar(mes);
+  const barra=(v,max)=>`<div class="bar" style="margin-top:5px"><span style="width:${Math.min(v/max*100,100)}%;background:${v/max>=.75?'var(--ok)':v/max>=.4?'var(--warn)':'var(--bad)'}"></span></div>`;
+  document.getElementById('cie4').innerHTML=`
+    <div class="nota ${ev.nota.c}">
+      <div class="ne">${ev.nota.e}</div>
+      <div><div class="nt">${ev.nota.t}</div><div class="np">${ev.p} de 100 puntos</div></div>
+    </div>
+    <div class="sem" style="margin-top:14px">
+      <div class="sm ${ev.ahorro>=15?'v':ev.ahorro>=5?'a':'r'}"><div class="l">Tasa de ahorro</div>
+        <div class="v2">${ev.ing?ev.ahorro.toFixed(0)+'%':'—'}</div>${barra(ev.ahorro,30)}</div>
+      <div class="sm ${ev.deuda<15?'v':ev.deuda<=30?'a':'r'}"><div class="l">Ingreso en deudas</div>
+        <div class="v2">${ev.ing?ev.deuda.toFixed(0)+'%':'—'}</div>${barra(Math.max(0,40-ev.deuda),40)}</div>
+      <div class="sm ${ev.fondo>=3?'v':ev.fondo>=1?'a':'r'}"><div class="l">Fondo de emergencia</div>
+        <div class="v2">${ev.fondo.toFixed(1)} meses</div>${barra(ev.fondo,6)}</div>
+      <div class="sm ${ev.cumpl<=100?'v':ev.cumpl<=110?'a':'r'}"><div class="l">Cumplimiento del presupuesto</div>
+        <div class="v2">${ev.pres?ev.cumpl.toFixed(0)+'%':'—'}</div>${barra(Math.max(0,140-ev.cumpl),140)}</div>
+    </div>
+    <div style="margin-top:14px">${recomendar(mes,ev)}</div>`;
+
+  /* --- Paso 5: presupuesto del mes siguiente --- */
+  const sig=mesSiguiente(mes);
+  const filas=[];
+  Object.entries(CFG.gasto).forEach(([k,cat])=>cat.subs.forEach(s=>{
+    const eje=TX.filter(t=>t.tipo==='gasto'&&t.cat===k&&t.sub===s.n&&mesDe(t.fecha)===mes)
+                .reduce((a,t)=>a+t.monto,0);
+    if(!eje && !(+s.p)) return;
+    /* Se sugiere lo ejecutado redondeado a la decena de miles; si no hubo gasto, se conserva */
+    const sug = eje ? Math.round(eje/10000)*10000 : (+s.p||0);
+    filas.push({cat:k,sub:s.n,pres:+s.p||0,eje,sug});
+  }));
+  filas.sort((a,b)=>b.eje-a.eje);
+  document.getElementById('cie5').innerHTML = filas.length ? `
+    <div class="hint" style="margin:0 0 10px">Presupuesto para <b>${nomMes(sig)}</b></div>
+    ${filas.map((f,i)=>`<div class="sug">
+      <div class="i"><div class="n">${esc(f.sub)}</div>
+        <div class="s">${esc(f.cat)} · presupuesto ${cop(f.pres)} · gastaste ${cop(f.eje)}
+        ${f.pres?`<b style="color:${f.eje>f.pres?'var(--bad)':'var(--ok)'}"> (${(f.eje/f.pres*100).toFixed(0)}%)</b>`:''}</div></div>
+      <div style="width:130px"><label>Nuevo</label>
+        <input data-money inputmode="numeric" id="sug${i}" value="${fmtNum(f.sug)}"></div>
+    </div>`).join('')}
+    <button class="btn sm" style="margin-top:12px" onclick='aplicarPresupuestos(${JSON.stringify(filas.map(f=>({c:f.cat,s:f.sub})))})'>💾 Guardar presupuestos de ${nomMes(sig)}</button>`
+    : '<div class="empty">Sin movimientos en este mes para sugerir presupuestos</div>';
+}
+
+function recomendar(mes,ev){
+  const r=[];
+  if(ev.ahorro<5&&ev.ing) r.push(['bad','🚨','Tu tasa de ahorro es crítica',
+    `Ahorraste ${ev.ahorro.toFixed(0)}% de lo que ganaste. Por debajo del 5% cualquier imprevisto se convierte en deuda nueva. Empieza por separar el ahorro <b>apenas entra la nómina</b>, no con lo que sobre al final: con lo que sobra nunca sobra.`]);
+  else if(ev.ahorro<15&&ev.ing) r.push(['warn','📈','Puedes ahorrar más',
+    `Vas en ${ev.ahorro.toFixed(0)}% y la referencia sana es 15%. Mira en el paso 5 las subcategorías donde más te pasaste: ahí está el margen.`]);
+
+  if(ev.deuda>30&&ev.ing) r.push(['bad','💳','Estás sobreendeudado',
+    `Tus cuotas se llevan el ${ev.deuda.toFixed(0)}% del ingreso; por encima del 30% la situación es frágil. Ve a <b>Plan de deuda</b> y simula cuánto adelantarías con un pago extra, aunque sea pequeño.`]);
+
+  if(ev.fondo<1) r.push(['bad','🛟','No tienes colchón',
+    `Tus activos líquidos cubren ${ev.fondo.toFixed(1)} meses de gasto. Antes de invertir en cualquier cosa, junta al menos <b>un mes</b>: es lo que evita que un imprevisto te devuelva a la deuda cara.`]);
+  else if(ev.fondo<3) r.push(['warn','🛟','Colchón corto',
+    `Cubres ${ev.fondo.toFixed(1)} meses y lo sano son 3 a 6. Vas bien encaminado, sigue alimentándolo.`]);
+
+  if(ev.cumpl>110&&ev.pres) r.push(['warn','🎯','Te pasaste del presupuesto',
+    `Gastaste el ${ev.cumpl.toFixed(0)}% de lo presupuestado. Decide en el paso 5 qué es real: o recortas el gasto, o subes el presupuesto. Un presupuesto que incumples todos los meses no te sirve de nada.`]);
+
+  const mt=TX.filter(t=>t.tipo==='gasto'&&mesDe(t.fecha)===mes);
+  const porSub={};
+  mt.forEach(t=>{const k=t.cat+'§'+t.sub;porSub[k]=porSub[k]||{s:t.sub,v:0};porSub[k].v+=t.monto;});
+  const top=Object.values(porSub).sort((a,b)=>b.v-a.v)[0];
+  if(top) r.push(['ok','🎯',`Tu mayor gasto fue ${esc(top.s)}`,
+    `${cop(top.v)} en ${nomMes(mes)}. Recortarlo un 15% liberaría <b>${cop(top.v*0.15*12)} al año</b>. Es donde un solo cambio de hábito rinde más.`]);
+
+  if(!r.length) r.push(['ok','🏆','Mes sólido',
+    'Todos los indicadores en verde. Mantén el ritmo y considera poner el excedente a rentar en vez de dejarlo quieto.']);
+
+  return r.slice(0,4).map(x=>`<div class="al ${x[0]}"><span>${x[1]}</span><div><b>${x[2]}</b>${x[3]}</div></div>`).join('');
+}
+
+function setReal(cuenta,valor){
+  const c=cierreDe(mesCierre());
+  const v=parseNum(valor);
+  if(valor.trim()==='') delete c.real[cuenta]; else c.real[cuenta]=v;
+  savePat(); renderCierre();
+}
+function tomarFotoMes(){
+  const mes=mesCierre();
+  PAT.historia=PAT.historia||{};
+  PAT.historia[mes]={a:totActivos(),p:totPasivos()};
+  savePat(); renderCierre(); renderPat();
+}
+function aplicarPresupuestos(refs){
+  refs.forEach((r,i)=>{
+    const el=document.getElementById('sug'+i); if(!el) return;
+    const g=CFG.gasto[r.c]; if(!g) return;
+    const s=g.subs.find(x=>x.n===r.s); if(s) s.p=parseNum(el.value);
+  });
+  save(); render();
+  alert('Presupuestos actualizados. Los verás en Categorías y en el Dashboard.');
+}
+function cerrarMes(){
+  const mes=mesCierre(), c=cierreDe(mes);
+  if(c.cerrado){ reabrirMes(); return; }
+  const sinConciliar=CUENTAS.filter(cu=>c.real[cu]===undefined).length;
+  if(sinConciliar===CUENTAS.length && !confirm('No conciliaste ninguna cuenta con tu banco. Es el paso que detecta lo que falta registrar.\n\n¿Cerrar de todas formas?')) return;
+  PAT.historia=PAT.historia||{};
+  PAT.historia[mes]={a:totActivos(),p:totPasivos()};
+  c.cerrado=true; c.fecha=hoy();
+  savePat(); render();
+  const ev=evaluar(mes);
+  alert(`${nomMes(mes)} cerrado ${ev.nota.e}\n\nCalificación: ${ev.p}/100 — ${ev.nota.t}\nPatrimonio: ${cop(patrimonio())}\n\nRevisa las recomendaciones del paso 4.`);
+}
+function reabrirMes(){
+  const c=cierreDe(mesCierre());
+  c.cerrado=false; savePat(); renderCierre();
+}
+const irA=id=>{
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===id));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id===id));
+  window.scrollTo(0,0);
+};
 
 /* ================= PATRIMONIO: ACTIVOS Y PASIVOS ================= */
 const TIPOS={liquido:'💵 Líquido',inversion:'📈 Inversión',propiedad:'🏠 Propiedad',
@@ -1002,7 +1306,7 @@ function mesActivo(){
   return (sel && sel.value) || mesesDisponibles().pop();
 }
 function render(){ renderRecent(); renderDash(); renderCat(); renderHist(); renderAna();
-                   renderSemaforo(); renderPat(); renderDeu(); }
+                   renderSemaforo(); renderPat(); renderDeu(); renderCierre(); }
 
 function renderRecent(){
   const el=document.getElementById('recent');
@@ -1447,6 +1751,7 @@ async function sesionLista(user){
 
 /* ================= INIT ================= */
 pintarTema();
+document.getElementById('fCuenta').innerHTML=CUENTAS.map(c=>`<option>${c}</option>`).join('');
 document.getElementById('fFecha').value=hoy();
 setTipo('gasto');
 setEstrategia('avalancha');
