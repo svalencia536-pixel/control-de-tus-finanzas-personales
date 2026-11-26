@@ -1361,26 +1361,81 @@ function borrar(id){
 }
 
 /* ================= GRÁFICOS SVG ================= */
-function donutSVG(items){
+/* Reparte los rectángulos buscando que queden lo más cuadrados posible
+   (algoritmo "squarified"): un rectángulo alargado es difícil de comparar. */
+function acomodarTreemap(items, W, H){
+  const total=items.reduce((s,i)=>s+i.v,0);
+  if(!total) return [];
+  const escala=(W*H)/total;
+  const salida=[];
+  let x=0,y=0,w=W,h=H;
+  let pend=items.map(i=>({...i, a:i.v*escala}));
+
+  const peor=(fila,lado)=>{
+    const s=fila.reduce((a,b)=>a+b.a,0);
+    const mx=Math.max(...fila.map(f=>f.a)), mn=Math.min(...fila.map(f=>f.a));
+    return Math.max((lado*lado*mx)/(s*s), (s*s)/(lado*lado*mn));
+  };
+
+  /* El corte va casi en cero, no en medio píxel: con una categoría enorme el
+     espacio que queda es mínimo, y un corte generoso borraba del gráfico las
+     categorías pequeñas en vez de dibujarlas diminutas. */
+  while(pend.length && w>1e-9 && h>1e-9){
+    const vertical = w>h;            // la fila se apila a lo alto
+    const lado = vertical ? h : w;
+    const fila=[];
+    while(pend.length){
+      const cand=[...fila,pend[0]];
+      if(fila.length && peor(cand,lado)>peor(fila,lado)) break;
+      fila.push(pend.shift());
+    }
+    const suma=fila.reduce((a,b)=>a+b.a,0);
+    const grosor=suma/lado;
+    let off=0;
+    fila.forEach(f=>{
+      const largo=f.a/grosor;
+      salida.push(vertical
+        ? {...f, x, y:y+off, w:grosor, h:largo}
+        : {...f, x:x+off, y, w:largo, h:grosor});
+      off+=largo;
+    });
+    if(vertical){ x+=grosor; w-=grosor; } else { y+=grosor; h-=grosor; }
+  }
+  return salida;
+}
+
+function treemapSVG(items){
   const tot=items.reduce((s,i)=>s+i.v,0);
   if(!tot) return '<div class="empty">Sin datos para este mes</div>';
-  const C=2*Math.PI*70; let off=0;
-  /* 2px de separación entre segmentos: evita que dos colores vecinos se lean
-     como uno solo, sobre todo para quien no distingue bien los tonos. */
-  const GAP = items.length>1 ? 2 : 0;
-  const arcs=items.map((it,i)=>{
-    const len=Math.max(it.v/tot*C-GAP, 0.5);
-    const s=`<circle cx="100" cy="100" r="70" fill="none" stroke="${paleta()[i%8]}" stroke-width="26"
-      stroke-dasharray="${len.toFixed(2)} ${(C-len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"
-      transform="rotate(-90 100 100)"><title>${esc(it.k)}: ${cop(it.v)}</title></circle>`;
-    off+=it.v/tot*C; return s;
+  const W=360, H=240, GAP=2;
+  const nodos=acomodarTreemap(items, W, H);
+
+  const rects=nodos.map((n,i)=>{
+    const col=paleta()[i%8];
+    const pct=(n.v/tot*100);
+    const rw=Math.max(n.w-GAP,1), rh=Math.max(n.h-GAP,1);
+    /* La etiqueta solo entra si el rectángulo le da espacio; si no, queda
+       en la leyenda y en el tooltip. Nunca se encima el texto. */
+    const cabeNombre = rw>58 && rh>26;
+    const cabeValor  = rw>74 && rh>42;
+    const nombre = esc(n.k).length>18 && rw<110 ? esc(n.k).slice(0,16)+'…' : esc(n.k);
+    return `<g><rect x="${n.x.toFixed(1)}" y="${n.y.toFixed(1)}" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}"
+        fill="${col}" rx="3"><title>${esc(n.k)}: ${cop(n.v)} (${pct.toFixed(1)}%)</title></rect>
+      ${cabeNombre?`<text x="${(n.x+6).toFixed(1)}" y="${(n.y+16).toFixed(1)}" font-size="9.5"
+        font-weight="700" fill="#fff" style="pointer-events:none">${nombre}</text>`:''}
+      ${cabeValor?`<text x="${(n.x+6).toFixed(1)}" y="${(n.y+29).toFixed(1)}" font-size="9"
+        fill="#fff" opacity=".9" style="pointer-events:none">${cop(n.v)} · ${pct.toFixed(0)}%</text>`:''}
+    </g>`;
   }).join('');
-  return `<svg viewBox="0 0 200 200" style="width:100%;max-width:250px;display:block;margin:0 auto" role="img">
-    <title>Distribución de gasto por categoría</title>${arcs}
-    <text x="100" y="97" text-anchor="middle" font-size="13" font-weight="800" fill="currentColor">${cop(tot)}</text>
-    <text x="100" y="112" text-anchor="middle" font-size="9" fill="currentColor" opacity=".6">TOTAL MES</text>
-  </svg>
-  <div class="lg">${items.map((it,i)=>`<div><i style="background:${paleta()[i%8]}"></i>${esc(it.k)} · ${(it.v/tot*100).toFixed(0)}%</div>`).join('')}</div>`;
+
+  return `<div style="font-size:12px;color:var(--tx2);margin-bottom:8px">
+      Total del mes <b style="color:var(--tx);font-size:15px">${cop(tot)}</b>
+      <span style="opacity:.75"> · el área de cada bloque es su peso en el gasto</span></div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img">
+      <title>Gasto por categoría: el tamaño de cada bloque es proporcional a lo gastado</title>
+      ${rects}
+    </svg>
+    <div class="lg">${items.map((it,i)=>`<div><i style="background:${paleta()[i%8]}"></i>${esc(it.k)} · ${(it.v/tot*100).toFixed(0)}%</div>`).join('')}</div>`;
 }
 function barrasPres(items){
   if(!items.length) return '<div class="empty">Sin datos para este mes</div>';
@@ -1474,7 +1529,7 @@ function renderDash(){
    <div class="kpi ${tasa>=25?'ok':'warn'}"><div class="l">Promedio diario</div><div class="v mono">${cop(gas/dias)}</div><div class="s">en ${dias} día${dias>1?'s':''} con gasto</div></div>`;
 
   const porCat=Object.keys(CFG.gasto).map(k=>({k,v:mt.filter(t=>t.tipo==='gasto'&&t.cat===k).reduce((s,t)=>s+t.monto,0)})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v);
-  document.getElementById('donut').innerHTML=donutSVG(porCat);
+  document.getElementById('donut').innerHTML=treemapSVG(porCat);
 
   const acc={};
   mt.filter(t=>t.tipo==='gasto').forEach(t=>{
