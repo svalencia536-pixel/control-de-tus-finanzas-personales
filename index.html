@@ -223,6 +223,14 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
 .g-tip.warn{background:rgba(245,158,11,.12);border-color:var(--warn-tx)}
 .g-c{font-weight:800}
 .g-c.ok{color:var(--ok-tx)}.g-c.wr{color:var(--warn-tx)}.g-c.bd{color:var(--bad-tx)}
+/* ---- guía hablada ---- */
+.voz{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.vs{font-size:12px;color:var(--tx2);font-weight:600}
+/* El bloque que se está leyendo queda resaltado */
+.leyendo{outline:3px solid var(--p);outline-offset:4px;border-radius:12px;
+  animation:pulso 2.2s ease-in-out infinite}
+@keyframes pulso{0%,100%{outline-color:var(--p)}50%{outline-color:rgba(42,120,214,.25)}}
+@media (prefers-reduced-motion:reduce){.leyendo{animation:none}}
 /* ---- semáforo de indicadores ---- */
 .sem{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
 .sm{background:var(--bg);border:1px solid var(--bd);border-left:5px solid;border-radius:10px;padding:14px}
@@ -560,6 +568,23 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
   </div>
   <div id="anaKpis" class="kpis"></div>
   <div class="card"><h2>Evolución mensual: ingresos vs gastos vs ahorro</h2><div id="evol"></div></div>
+
+  <!-- Seguimiento de una categoría o subcategoría a lo largo de los meses -->
+  <div class="card">
+    <h2>🔎 Comportamiento en el tiempo</h2>
+    <p class="g-p" style="margin-bottom:12px">Elige qué seguir y verás cómo se ha movido
+    mes a mes, contra su presupuesto.</p>
+    <div class="row">
+      <div><label>Tipo</label><select id="tendTipo" onchange="tendCats();renderTendencia()">
+        <option value="gasto">Gastos</option><option value="ingreso">Ingresos</option></select></div>
+      <div><label>Categoría</label><select id="tendCat" onchange="tendSubs();renderTendencia()"></select></div>
+      <div><label>Subcategoría</label><select id="tendSub" onchange="renderTendencia()"></select></div>
+    </div>
+    <div id="tendKpis" class="kpis" style="margin-top:14px"></div>
+    <div id="tendGraf"></div>
+    <div id="tendNota"></div>
+  </div>
+
   <div class="card"><h2>💡 Diagnóstico y recomendaciones</h2><div id="diag"></div></div>
 </div>
 
@@ -567,6 +592,11 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
 <div id="guia" class="pane">
   <div class="card">
     <h2>📖 Cómo usar la app</h2>
+    <div id="vozPanel" class="voz">
+      <button class="btn" id="vozBtn" onclick="vozAlternar()">🔊 Escuchar la guía</button>
+      <button class="btn sec" id="vozStop" onclick="vozDetener()" hidden>⏹ Detener</button>
+      <div id="vozEstado" class="vs"></div>
+    </div>
     <p class="g-int">Está pensada para que registrar un gasto te tome menos de diez segundos. Lo demás —los cálculos, los tableros y las alertas— se hace solo.</p>
   </div>
 
@@ -1494,7 +1524,8 @@ function mesActivo(){
   return (sel && sel.value) || mesesDisponibles().pop();
 }
 function render(){ renderRecent(); renderDash(); renderCat(); renderHist(); renderAna();
-                   renderSemaforo(); renderPat(); renderDeu(); renderCierre(); pintarChips(); }
+                   renderSemaforo(); renderPat(); renderDeu(); renderCierre(); pintarChips();
+                   renderTendencia(); }
 
 function renderRecent(){
   const el=document.getElementById('recent');
@@ -1742,6 +1773,139 @@ function importJSON(inp){
   r.readAsText(f);
 }
 
+/* ---------- Comportamiento de una categoría en el tiempo ---------- */
+function tendCats(){
+  const tp=document.getElementById('tendTipo').value;
+  const s=document.getElementById('tendCat'), prev=s.value;
+  const ks=Object.keys(CFG[tp]);
+  s.innerHTML='<option value="">— Todas las categorías —</option>'+
+    ks.map(k=>`<option value="${esc(k)}">${CFG[tp][k].e} ${esc(k)}</option>`).join('');
+  if(ks.includes(prev)) s.value=prev;
+  tendSubs();
+}
+function tendSubs(){
+  const tp=document.getElementById('tendTipo').value;
+  const c=document.getElementById('tendCat').value;
+  const s=document.getElementById('tendSub'), prev=s.value;
+  const subs=(c&&CFG[tp][c])?CFG[tp][c].subs:[];
+  s.disabled=!c;
+  s.innerHTML='<option value="">— Toda la categoría —</option>'+
+    subs.map(x=>`<option value="${esc(x.n)}">${esc(x.n)}</option>`).join('');
+  if(subs.some(x=>x.n===prev)) s.value=prev;
+}
+function renderTendencia(){
+  const tp=document.getElementById('tendTipo').value;
+  const c=document.getElementById('tendCat').value;
+  const sb=document.getElementById('tendSub').value;
+  const ms=mesesDisponibles();
+
+  const serie=ms.map(m=>({
+    m, k:nomMes(m).slice(0,3)+' '+m.slice(2,4),
+    v:TX.filter(t=>t.tipo===tp && mesDe(t.fecha)===m
+        && (!c||t.cat===c) && (!sb||t.sub===sb))
+      .reduce((a,t)=>a+t.monto,0)
+  }));
+  const conDato=serie.filter(s=>s.v>0);
+  const titulo = sb || c || (tp==='gasto'?'todos los gastos':'todos los ingresos');
+  const meta = sb ? presSub(tp,c,sb) : c ? presCat(tp,c) : presTotal(tp);
+
+  if(!conDato.length){
+    document.getElementById('tendKpis').innerHTML='';
+    document.getElementById('tendGraf').innerHTML=
+      `<div class="empty">Sin movimientos registrados en <b>${esc(titulo)}</b></div>`;
+    document.getElementById('tendNota').innerHTML=''; return;
+  }
+
+  const tot=serie.reduce((a,s)=>a+s.v,0);
+  const prom=tot/serie.length;
+  const max=serie.reduce((a,b)=>b.v>a.v?b:a);
+  const ult=serie[serie.length-1];
+  /* Tendencia: se comparan los últimos tres meses contra los tres anteriores.
+     Con menos de cuatro meses todavía no hay con qué comparar. */
+  let tend=null;
+  if(serie.length>=4){
+    const n=Math.min(3,Math.floor(serie.length/2));
+    const rec=serie.slice(-n).reduce((a,s)=>a+s.v,0)/n;
+    const ant=serie.slice(-2*n,-n).reduce((a,s)=>a+s.v,0)/n;
+    if(ant>0) tend={pct:(rec-ant)/ant*100, rec, ant, n};
+  }
+
+  const dirCol = !tend ? 'var(--tx2)'
+    : tp==='gasto' ? (tend.pct>8?'var(--bad-tx)':tend.pct<-8?'var(--ok-tx)':'var(--tx2)')
+    : (tend.pct>8?'var(--ok-tx)':tend.pct<-8?'var(--bad-tx)':'var(--tx2)');
+  const flecha = !tend?'—':tend.pct>8?'▲':tend.pct<-8?'▼':'▬';
+
+  document.getElementById('tendKpis').innerHTML=`
+    <div class="kpi"><div class="l">Promedio mensual</div><div class="v mono">${cop(prom)}</div>
+      <div class="s">${serie.length} mes${serie.length>1?'es':''} con registro</div></div>
+    <div class="kpi"><div class="l">Último mes</div><div class="v mono">${cop(ult.v)}</div>
+      <div class="s">${nomMes(ult.m)}${prom?` · ${ult.v>prom?'+':''}${((ult.v-prom)/prom*100).toFixed(0)}% vs promedio`:''}</div></div>
+    <div class="kpi"><div class="l">Mes más alto</div><div class="v mono">${cop(max.v)}</div>
+      <div class="s">${nomMes(max.m)}</div></div>
+    <div class="kpi"><div class="l">Tendencia</div>
+      <div class="v" style="color:${dirCol}">${flecha} ${tend?(tend.pct>0?'+':'')+tend.pct.toFixed(0)+'%':'—'}</div>
+      <div class="s">${tend?`últimos ${tend.n} vs ${tend.n} anteriores`:'faltan meses para comparar'}</div></div>`;
+
+  document.getElementById('tendGraf').innerHTML=barrasMes(serie, meta, tp);
+
+  /* Lectura en palabras: lo que el gráfico ya muestra, dicho explícito */
+  let nota='';
+  if(meta){
+    const sobre=serie.filter(s=>s.v>meta).length;
+    /* Pasarse del presupuesto significa lo contrario según el tipo: en gastos
+       es un exceso; en ingresos es haber ganado más de lo previsto. */
+    if(tp==='ingreso'){
+      nota += sobre>=serie.length/2
+        ? `<div class="al ok"><span>💪</span><div><b>${esc(titulo)} supera lo presupuestado en ${sobre} de ${serie.length} meses</b>Presupuestaste ${cop(meta)} y el promedio real es ${cop(prom)}. Súbelo a lo que de verdad entra: con un presupuesto de ingresos bajo, el excedente parece sobrante y se gasta.</div></div>`
+        : `<div class="al warn"><span>📉</span><div><b>${esc(titulo)} no alcanza lo presupuestado</b>Esperabas ${cop(meta)} al mes y el promedio real es ${cop(prom)}. Si el presupuesto de gastos se armó contando con esa plata, hay un hueco de ${cop(meta-prom)} al mes.</div></div>`;
+    } else {
+      nota += sobre
+        ? `<div class="al warn"><span>📌</span><div><b>${esc(titulo)} superó el presupuesto en ${sobre} de ${serie.length} meses</b>El presupuesto es ${cop(meta)} y el promedio real ${cop(prom)}. ${prom>meta?'Si se repite todos los meses, lo que está mal es el presupuesto, no el gasto: ajústalo a la realidad o no te sirve de nada.':'Son excesos puntuales; el promedio sí cabe.'}</div></div>`
+        : `<div class="al ok"><span>✅</span><div><b>${esc(titulo)}: nunca superó el presupuesto</b>Promedio ${cop(prom)} contra ${cop(meta)} presupuestados. Te sobran ${cop(meta-prom)} al mes en promedio.</div></div>`;
+    }
+  } else {
+    nota += `<div class="al warn"><span>🧭</span><div><b>${esc(titulo)} no tiene presupuesto</b>Sin un monto definido no hay contra qué comparar. Asígnalo en la pestaña Categorías.</div></div>`;
+  }
+  if(tend && Math.abs(tend.pct)>15){
+    const sube=tend.pct>0;
+    const malo = (tp==='gasto') === sube;
+    nota += `<div class="al ${malo?'bad':'ok'}"><span>${sube?'📈':'📉'}</span><div><b>${sube?'Viene subiendo':'Viene bajando'}: ${(tend.pct>0?'+':'')+tend.pct.toFixed(0)}%</b>Pasó de ${cop(tend.ant)} a ${cop(tend.rec)} de promedio mensual. ${malo?`De seguir así, en un año serían ${cop(tend.rec*12)} en vez de ${cop(tend.ant*12)}.`:`Vas bien: si lo sostienes, ahorras ${cop(Math.abs(tend.rec-tend.ant)*12)} al año.`}</div></div>`;
+  }
+  document.getElementById('tendNota').innerHTML=nota;
+}
+
+/* Barras por mes con la línea de presupuesto como referencia */
+function barrasMes(serie, meta, tp){
+  if(!serie.length) return '';
+  const W=640,H=200,P=30,Pt=18;
+  const max=Math.max(...serie.map(s=>s.v), meta||0)||1;
+  const Y=v=>H-P-(v/max)*(H-P-Pt);
+  const paso=(W-16)/serie.length;
+  const bw=Math.min(54, paso*0.62);
+  let out='';
+  serie.forEach((s,i)=>{
+    const cx=8+paso*i+paso/2;
+    const x=cx-bw/2, y=Y(s.v);
+    const col = !meta ? 'var(--p)' : s.v>meta
+      ? (tp==='gasto'?'var(--bad)':'var(--ok)')
+      : (tp==='gasto'?'var(--ok)':'var(--warn)');
+    out+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}"
+        height="${Math.max(H-P-y,0).toFixed(1)}" fill="${col}" rx="3">
+        <title>${s.k}: ${cop(s.v)}</title></rect>`;
+    if(s.v>0 && bw>30) out+=`<text x="${cx.toFixed(1)}" y="${(y-5).toFixed(1)}" text-anchor="middle"
+        font-size="8.5" font-weight="700" fill="currentColor" opacity=".8">${corto(s.v)}</text>`;
+    out+=`<text x="${cx.toFixed(1)}" y="${H-10}" text-anchor="middle" font-size="9.5"
+        fill="currentColor" opacity=".65">${s.k}</text>`;
+  });
+  if(meta) out+=`<line x1="4" y1="${Y(meta).toFixed(1)}" x2="${W-4}" y2="${Y(meta).toFixed(1)}"
+      stroke="var(--tx2)" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <text x="${W-6}" y="${(Y(meta)-5).toFixed(1)}" text-anchor="end" font-size="9"
+      font-weight="700" fill="var(--tx2)">Presupuesto ${cop(meta)}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img">
+    <title>Valor por mes frente al presupuesto</title>${out}</svg>`;
+}
+const corto=v=>v>=1e6?'$'+(v/1e6).toFixed(1).replace('.',',')+'M':v>=1000?'$'+Math.round(v/1000)+'K':cop(v);
+
 /* ---------- Análisis ---------- */
 function renderAna(){
   const ms=mesesDisponibles();
@@ -1854,6 +2018,100 @@ function seed(){
   render();
 }
 
+/* ================= GUÍA HABLADA =================
+   Lee el instructivo en voz alta, resaltando y centrando el bloque que va
+   narrando. Mantiene la pantalla encendida mientras avanza. */
+const VOZ = { on:false, i:0, bloques:[], lock:null, voz:null };
+
+/* Busca una voz en español; si el equipo no tiene, usa la que haya */
+function vozElegir(){
+  const vs = speechSynthesis.getVoices();
+  if(!vs.length) return null;
+  return vs.find(v=>/^es(-|_)CO/i.test(v.lang))
+      || vs.find(v=>/^es(-|_)(MX|US|419)/i.test(v.lang))
+      || vs.find(v=>/^es/i.test(v.lang))
+      || null;
+}
+/* Texto legible de un bloque: sin emojis ni símbolos que la voz deletrea */
+function vozTexto(el){
+  /* Se copia el bloque y se le quitan los botones: si no, la voz lee
+     "Escuchar la guía" y "Detener" como si fueran parte del instructivo. */
+  const c=el.cloneNode(true);
+  c.querySelectorAll('.voz,button,select,input').forEach(x=>x.remove());
+  return (c.innerText||c.textContent||'')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu,' ')
+    .replace(/·/g,', ').replace(/→/g,' a ').replace(/—/g,', ')
+    .replace(/\s+/g,' ').trim();
+}
+async function vozPantallaEncendida(activar){
+  try{
+    if(activar){
+      if('wakeLock' in navigator && !VOZ.lock){
+        VOZ.lock = await navigator.wakeLock.request('screen');
+        /* Si el sistema la suelta (al cambiar de app), se vuelve a pedir */
+        VOZ.lock.addEventListener('release',()=>{ VOZ.lock=null; });
+      }
+    } else if(VOZ.lock){ await VOZ.lock.release(); VOZ.lock=null; }
+  }catch(e){ /* sin permiso o sin soporte: la narración sigue igual */ }
+}
+/* Si el usuario vuelve a la app, se recupera el bloqueo de pantalla */
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible' && VOZ.on && !VOZ.lock) vozPantallaEncendida(true);
+});
+
+function vozEstado(t){ document.getElementById('vozEstado').textContent=t; }
+function vozLimpiar(){
+  document.querySelectorAll('.leyendo').forEach(e=>e.classList.remove('leyendo'));
+}
+function vozDetener(){
+  VOZ.on=false;
+  try{ speechSynthesis.cancel(); }catch(e){}
+  vozLimpiar(); vozPantallaEncendida(false);
+  document.getElementById('vozBtn').textContent='🔊 Escuchar la guía';
+  document.getElementById('vozBtn').hidden=false;
+  document.getElementById('vozStop').hidden=true;
+  vozEstado('');
+}
+function vozAlternar(){
+  if(VOZ.on){ vozDetener(); return; }
+  if(!('speechSynthesis' in window)){
+    vozEstado('Este navegador no puede leer en voz alta. Prueba con Chrome o Safari.');
+    return;
+  }
+  VOZ.bloques=[...document.querySelectorAll('#guia .card')].filter(c=>vozTexto(c).length>25);
+  if(!VOZ.bloques.length){ vozEstado('No hay texto que leer.'); return; }
+  VOZ.on=true; VOZ.i=0;
+  VOZ.voz=vozElegir();
+  document.getElementById('vozBtn').hidden=true;
+  document.getElementById('vozStop').hidden=false;
+  vozPantallaEncendida(true);
+  vozLeer();
+}
+function vozLeer(){
+  if(!VOZ.on) return;
+  vozLimpiar();
+  if(VOZ.i>=VOZ.bloques.length){
+    vozEstado('Guía terminada ✅');
+    const t=setTimeout(()=>vozDetener(),2500);
+    return;
+  }
+  const el=VOZ.bloques[VOZ.i];
+  el.classList.add('leyendo');
+  el.scrollIntoView({behavior:'smooth', block:'center'});
+  vozEstado(`Leyendo ${VOZ.i+1} de ${VOZ.bloques.length}`);
+
+  const u=new SpeechSynthesisUtterance(vozTexto(el));
+  u.lang='es-CO'; u.rate=0.98; u.pitch=1;
+  if(VOZ.voz) u.voice=VOZ.voz;
+  u.onend=()=>{ if(VOZ.on){ VOZ.i++; setTimeout(vozLeer,450); } };
+  u.onerror=()=>{ if(VOZ.on){ VOZ.i++; setTimeout(vozLeer,450); } };
+  try{ speechSynthesis.speak(u); }
+  catch(e){ vozEstado('No se pudo iniciar la voz.'); vozDetener(); }
+}
+/* Las voces llegan de forma asíncrona en varios navegadores */
+if('speechSynthesis' in window)
+  speechSynthesis.addEventListener('voiceschanged',()=>{ VOZ.voz=vozElegir(); });
+
 /* ================= ACCESO A LA NUBE ================= */
 const ov=(id,on)=>document.getElementById(id).classList.toggle('on',on);
 
@@ -1940,6 +2198,7 @@ async function sesionLista(user){
 /* ================= INIT ================= */
 pintarTema();
 document.getElementById('fCuenta').innerHTML=CUENTAS.map(c=>`<option>${c}</option>`).join('');
+tendCats();
 document.getElementById('fFecha').value=hoy();
 setTipo('gasto');
 setEstrategia('avalancha');
