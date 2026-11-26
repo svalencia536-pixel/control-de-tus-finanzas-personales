@@ -332,10 +332,11 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
   <div id="errLogin" class="err"></div>
   <p class="pie">La contraseña se guarda cifrada; ni yo ni nadie puede leerla. Úsala larga y
   que no repitas en otro lado: es lo único que protege tus datos.</p>
-  <div class="sep"><span>o si solo quieres verla</span></div>
-  <button class="btn demo" onclick="demo()">👀 Ver demostración con datos de ejemplo</button>
-  <p class="pie">Entra sin registrarte, con un mes de ejemplo. Nada se guarda en el servidor.</p>
-  <div style="text-align:center"><button class="lnk" onclick="modoLocal()">Trabajar sin cuenta, solo en este dispositivo</button></div>
+  <div class="sep"><span>solo para curiosear</span></div>
+  <p class="pie" style="margin:0 0 10px"><b>Ojo:</b> estas dos opciones <b>no guardan nada en la nube</b>
+  y tu pareja no verá lo que registres. Si vienen a llevar las finanzas del hogar, creen su cuenta arriba.</p>
+  <button class="btn sec" style="width:100%" onclick="demo()">👀 Ver una demostración</button>
+  <div style="text-align:center;margin-top:8px"><button class="lnk" onclick="modoLocal()">Trabajar sin cuenta, solo en este dispositivo</button></div>
 </div></div>
 
 <div class="wrap">
@@ -2143,12 +2144,30 @@ if('speechSynthesis' in window)
 /* ================= ACCESO A LA NUBE ================= */
 const ov=(id,on)=>document.getElementById(id).classList.toggle('on',on);
 
+/* Vuelve a la pantalla de entrar desde el modo local o la demostración.
+   Sin esto, quien toque "trabajar sin cuenta" se queda sin forma de volver. */
+function volverAEntrar(){
+  const hayDatos = TX.length>0;
+  if(hayDatos && !confirm('Vas a entrar con tu cuenta. Lo que tengas guardado solo en este dispositivo no se sube: al entrar verás lo que haya en tu hogar.\n\n¿Continuar?')) return;
+  LS.clear();
+  location.reload();
+}
 function modoLocal(){
   LS.set('finLocal','1');
   ov('ovLogin',false);
   NUBE.on=false;
   estado('solo este equipo','#fde68a');
-  document.getElementById('hdSub').textContent='Control de gastos e ingresos · datos solo en este dispositivo';
+  document.getElementById('hdSub').innerHTML=
+    'Datos <b>solo en este dispositivo</b> · <button class="lnk" style="color:#fff" onclick="volverAEntrar()">entrar con mi cuenta</button>';
+  avisoSinCuenta('Estás trabajando <b>sin cuenta</b>: lo que registres se queda únicamente en este dispositivo y tu pareja no lo verá.');
+}
+/* Aviso fijo mientras no haya cuenta, para que nadie crea que está compartiendo */
+function avisoSinCuenta(msg){
+  const c=document.getElementById('alerts');
+  if(document.getElementById('avisoLocal')) return;
+  c.insertAdjacentHTML('afterbegin',
+    `<div class="al warn" id="avisoLocal"><span>📵</span><div><b>No estás compartiendo</b>${msg}
+     <button class="lnk" onclick="volverAEntrar()">Entrar con mi cuenta</button></div></div>`);
 }
 /* Demostración: entra sin registro, con un mes de ejemplo ya cargado.
    Pensada para mostrar la app a alguien en el celular sin explicarle nada. */
@@ -2157,18 +2176,14 @@ function demo(){
   ov('ovLogin',false);
   estado('demostración','#fde68a');
   document.getElementById('hdSub').innerHTML=
-    'Datos de ejemplo · <button class="lnk" style="color:#fff" onclick="salirDemo()">empezar de cero</button>';
+    'Datos de ejemplo · <button class="lnk" style="color:#fff" onclick="volverAEntrar()">entrar con mi cuenta</button>';
   if(!TX.length) seed();
   document.getElementById('alerts').innerHTML='';
+  avisoSinCuenta('Esto es una <b>demostración</b> con datos inventados. Para llevar tus finanzas de verdad y compartirlas, entra con tu cuenta.');
   document.querySelectorAll('.nav button')[1].click();
   const sel=document.getElementById('mesSel');
   if([...sel.options].some(o=>o.value==='2025-12')){ sel.value='2025-12'; render(); }
   window.scrollTo(0,0);
-}
-function salirDemo(){
-  if(!confirm('Se borran los datos de ejemplo y empiezas con la app vacía. ¿Continuar?'))return;
-  LS.clear();
-  location.reload();
 }
 function ocupado(si,texto){
   ['btnEntrar','btnCrear'].forEach(id=>{
