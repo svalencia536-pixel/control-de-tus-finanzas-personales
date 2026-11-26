@@ -481,11 +481,20 @@ async function enviarAviso(fila, titulo, cuerpo) {
     await webpush.sendNotification(fila.datos, JSON.stringify({ titulo, cuerpo }));
     return true;
   } catch (e) {
-    /* 404/410: el navegador desechó la suscripción (app desinstalada, permiso
-       revocado). Se borra para no reintentar en vano cada noche. */
-    if (e.statusCode === 404 || e.statusCode === 410)
+    /* Se descarta la suscripción cuando ya no sirve:
+         404/410 → el navegador la desechó (app desinstalada, permiso revocado)
+         403/400 → el servicio la rechaza por mal formada o firmada
+         sin statusCode → ni siquiera se pudo construir el envío
+       Cualquiera de esos casos fallaría igual todas las noches. */
+    const muerta = [400, 403, 404, 410].includes(e.statusCode) || e.statusCode === undefined;
+    if (muerta) {
       await pool.query('delete from avisos where endpoint=$1', [fila.endpoint]).catch(() => {});
-    else console.error('aviso', e.statusCode, e.body || e.message);
+      console.warn('aviso descartado', e.statusCode ?? 'sin código', e.message);
+    } else {
+      /* 429 o 5xx: el servicio está saturado o caído. Se conserva y se
+         reintenta mañana; borrarla aquí perdería un recordatorio válido. */
+      console.error('aviso falló', e.statusCode, e.body || e.message);
+    }
     return false;
   }
 }
