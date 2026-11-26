@@ -10,7 +10,7 @@ COPY package.json package-lock.json* ./
 RUN npm install --omit=dev --no-audit --no-fund
 
 COPY server.js ./
-COPY index.html ./
+COPY index.html sw.js ./
 
 # No correr como root dentro del contenedor
 USER node

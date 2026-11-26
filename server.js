@@ -16,6 +16,7 @@ import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pg from 'pg';
+import webpush from 'web-push';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -106,6 +107,20 @@ async function migrar() {
     await pool.query('update movimientos set hogar_id=$1, creado_por=coalesce(creado_por,user_id) where user_id=$2 and hogar_id is null', [h, u.id]);
     await pool.query('update maestros    set hogar_id=$1 where user_id=$2 and hogar_id is null', [h, u.id]);
   }
+
+  /* Suscripciones a las notificaciones del navegador. Una por dispositivo:
+     el mismo usuario puede tener el celular y el PC. */
+  await pool.query(`
+    create table if not exists avisos (
+      endpoint   text primary key,
+      user_id    uuid not null references usuarios(id) on delete cascade,
+      datos      jsonb not null,
+      hora       int  not null default 21,
+      ultimo     date,
+      creado     timestamptz not null default now()
+    );
+    create index if not exists avisos_user on avisos (user_id);
+  `);
 
   await pool.query(`create index if not exists mov_hogar_fecha on movimientos (hogar_id, fecha desc)`);
   await pool.query(`create unique index if not exists maestros_hogar on maestros (hogar_id)`);
@@ -409,6 +424,109 @@ app.post('/api/importar', conSesion, async (req, res) => {
     res.status(500).json({ error: 'No se pudo restaurar el respaldo.' });
   } finally { cli.release(); }
 });
+
+/* ───────────────────────── recordatorio diario ─────────────────────────
+   El navegador no puede despertarse solo a una hora, así que la notificación
+   la empuja el servidor. En iOS solo llega si la app está agregada a la
+   pantalla de inicio: es una restricción de Apple, no del código. */
+const VAPID_PUB = process.env.VAPID_PUBLIC || '';
+const VAPID_PRIV = process.env.VAPID_PRIVATE || '';
+const avisosActivos = !!(VAPID_PUB && VAPID_PRIV);
+if (avisosActivos) {
+  webpush.setVapidDetails('mailto:svalencia536@gmail.com', VAPID_PUB, VAPID_PRIV);
+} else {
+  console.warn('Sin VAPID_PUBLIC/VAPID_PRIVATE: los recordatorios quedan apagados.');
+}
+
+app.get('/api/avisos/llave', (_, res) => res.json({ llave: VAPID_PUB, activos: avisosActivos }));
+
+app.post('/api/avisos/suscribir', conSesion, async (req, res) => {
+  try {
+    const s = req.body?.sub;
+    const hora = Math.min(23, Math.max(0, parseInt(req.body?.hora ?? 21, 10) || 21));
+    if (!s?.endpoint || !s?.keys?.p256dh) return res.status(400).json({ error: 'Suscripción inválida' });
+    await pool.query(
+      `insert into avisos (endpoint,user_id,datos,hora) values ($1,$2,$3,$4)
+       on conflict (endpoint) do update set user_id=$2, datos=$3, hora=$4`,
+      [s.endpoint, req.uid, s, hora]);
+    res.json({ ok: true, hora });
+  } catch (e) { console.error('suscribir', e); res.status(500).json({ error: 'No se pudo activar.' }); }
+});
+
+app.post('/api/avisos/cancelar', conSesion, async (req, res) => {
+  try {
+    const ep = req.body?.endpoint;
+    if (ep) await pool.query('delete from avisos where endpoint=$1 and user_id=$2', [ep, req.uid]);
+    else await pool.query('delete from avisos where user_id=$1', [req.uid]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'No se pudo desactivar.' }); }
+});
+
+app.get('/api/avisos/estado', conSesion, async (req, res) => {
+  const { rows } = await pool.query('select endpoint, hora from avisos where user_id=$1', [req.uid]);
+  res.json({ dispositivos: rows.length, hora: rows[0]?.hora ?? 21 });
+});
+
+/* Envío de prueba, para comprobar que llega sin esperar a la hora */
+app.post('/api/avisos/probar', conSesion, async (req, res) => {
+  const { rows } = await pool.query('select endpoint, datos from avisos where user_id=$1', [req.uid]);
+  if (!rows.length) return res.status(404).json({ error: 'Este dispositivo no tiene el recordatorio activado.' });
+  let ok = 0;
+  for (const r of rows) if (await enviarAviso(r, '🔔 Prueba', 'Si ves esto, el recordatorio quedó funcionando.')) ok++;
+  res.json({ enviados: ok, de: rows.length });
+});
+
+async function enviarAviso(fila, titulo, cuerpo) {
+  try {
+    await webpush.sendNotification(fila.datos, JSON.stringify({ titulo, cuerpo }));
+    return true;
+  } catch (e) {
+    /* 404/410: el navegador desechó la suscripción (app desinstalada, permiso
+       revocado). Se borra para no reintentar en vano cada noche. */
+    if (e.statusCode === 404 || e.statusCode === 410)
+      await pool.query('delete from avisos where endpoint=$1', [fila.endpoint]).catch(() => {});
+    else console.error('aviso', e.statusCode, e.body || e.message);
+    return false;
+  }
+}
+
+/* La hora de Colombia es fija (UTC-5, sin horario de verano), pero se calcula
+   con la zona horaria real para no depender de esa suposición. */
+function ahoraBogota() {
+  const f = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota', hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit'
+  }).formatToParts(new Date());
+  const v = Object.fromEntries(f.map(p => [p.type, p.value]));
+  return { fecha: `${v.year}-${v.month}-${v.day}`, hora: parseInt(v.hour, 10) };
+}
+
+async function revisarRecordatorios() {
+  if (!avisosActivos) return;
+  const { fecha, hora } = ahoraBogota();
+  try {
+    const { rows } = await pool.query(
+      `select a.endpoint, a.datos, u.hogar_id,
+              (select count(*) from movimientos m
+                where m.hogar_id=u.hogar_id and m.fecha=$1) as hoy
+         from avisos a join usuarios u on u.id=a.user_id
+        where a.hora=$2 and (a.ultimo is null or a.ultimo < $1::date)`,
+      [fecha, hora]);
+    for (const r of rows) {
+      const n = Number(r.hoy);
+      const [titulo, cuerpo] = n > 0
+        ? ['✅ Van ' + n + ' movimiento' + (n === 1 ? '' : 's') + ' hoy',
+           '¿Quedó algo sin registrar? Un minuto ahora te ahorra media hora el fin de mes.']
+        : ['💰 No has registrado nada hoy',
+           'Abre y anota lo del día: los gastos pequeños son los que descuadran el presupuesto.'];
+      await enviarAviso(r, titulo, cuerpo);
+      await pool.query('update avisos set ultimo=$1 where endpoint=$2', [fecha, r.endpoint]).catch(() => {});
+    }
+    if (rows.length) console.log(`Recordatorios enviados: ${rows.length} (${fecha} ${hora}h Bogotá)`);
+  } catch (e) { console.error('recordatorios', e.message); }
+}
+/* Se revisa cada cinco minutos: basta para acertar la hora y no castiga la base */
+setInterval(revisarRecordatorios, 3e5).unref();
 
 /* ───────────────────────── la aplicación ───────────────────────── */
 app.get('/api/salud', async (_, res) => {

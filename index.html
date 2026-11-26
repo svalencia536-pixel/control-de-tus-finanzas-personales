@@ -229,6 +229,12 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
        font-size:13px;line-height:1.65;margin-top:12px}
 .g-tip.warn{background:rgba(245,158,11,.12);border-color:var(--warn-tx)}
 .g-c{font-weight:800}
+.rec{margin-top:14px}
+.rect{background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:14px}
+.rect b{font-size:13.5px}
+.rect p{font-size:12.5px;color:var(--tx2);line-height:1.6;margin:6px 0 10px}
+.recf{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.recf>div{width:110px}
 .cod{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:21px;font-weight:800;
   letter-spacing:3px;background:var(--bg);border:1px dashed var(--p);border-radius:8px;
   padding:10px 14px;margin:9px 0;display:inline-block;color:var(--p);user-select:all}
@@ -394,6 +400,8 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
         <input type="text" id="fDet" placeholder="Ej: mercado D1" autocomplete="off"></div>
     </div>
     <div id="presHint" class="hint" style="margin:12px 0 0"></div>
+    <!-- Recordatorio diario. Solo aparece con cuenta: sin servidor no hay aviso. -->
+    <div id="recordatorio" class="rec" hidden></div>
     <div class="acciones">
       <button class="btn grande" onclick="guardar()">💾 Guardar movimiento</button>
       <button class="btn sec" onclick="seed()">📥 Cargar ejemplo</button>
@@ -2047,6 +2055,111 @@ function seed(){
   render();
 }
 
+/* ================= RECORDATORIO DIARIO =================
+   La notificación la manda el servidor a la hora elegida. El navegador solo
+   la recibe; no puede programarla por su cuenta. */
+const AVISO = { llave:null, reg:null, sub:null };
+
+const base64aBytes = b64 => {
+  const s=(b64+'='.repeat((4-b64.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/');
+  return Uint8Array.from(atob(s), c=>c.charCodeAt(0));
+};
+const puedeAvisar = () =>
+  'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+async function iniciarAvisos(){
+  const caja=document.getElementById('recordatorio');
+  if(!NUBE.on){ caja.hidden=true; return; }
+  caja.hidden=false;
+
+  if(!puedeAvisar()){
+    caja.innerHTML=`<div class="rect"><b>🔔 Recordatorio diario</b>
+      <p>Este navegador no admite notificaciones. En iPhone funcionan solo si agregas
+      la app a la pantalla de inicio (Compartir → Agregar a inicio) y la abres desde ahí.</p></div>`;
+    return;
+  }
+  try{
+    const k=await api('avisos/llave');
+    if(!k.activos){ caja.hidden=true; return; }
+    AVISO.llave=k.llave;
+    AVISO.reg=await navigator.serviceWorker.register('/sw.js');
+    AVISO.sub=await AVISO.reg.pushManager.getSubscription();
+  }catch(e){ caja.hidden=true; return; }
+  pintarAvisos();
+}
+
+function pintarAvisos(){
+  const caja=document.getElementById('recordatorio');
+  const activo=!!AVISO.sub && Notification.permission==='granted';
+  const bloqueado=Notification.permission==='denied';
+  const h=LS.get('finHoraAviso')||'21';
+
+  if(bloqueado){
+    caja.innerHTML=`<div class="rect"><b>🔕 Notificaciones bloqueadas</b>
+      <p>Las bloqueaste para este sitio. Para activarlas, busca el candado 🔒 junto a la
+      dirección y permite las notificaciones.</p></div>`;
+    return;
+  }
+  caja.innerHTML=`<div class="rect">
+    <b>${activo?'🔔 Recordatorio activo':'🔔 Recordatorio diario'}</b>
+    <p>${activo
+      ? `Te avisa en este dispositivo todos los días a las <b>${h}:00</b>, hora de Colombia.`
+      : 'Que el celular te avise a una hora fija para registrar lo del día. Es el hábito, no la app, lo que hace que esto funcione.'}</p>
+    <div class="recf">
+      <div><label>Hora</label>
+        <select id="avHora" onchange="cambiarHora()">
+          ${[18,19,20,21,22].map(x=>`<option value="${x}"${String(x)===String(h)?' selected':''}>${x}:00</option>`).join('')}
+        </select></div>
+      <button class="btn sm ${activo?'sec':''}" onclick="alternarAviso()">${activo?'Desactivar':'Activar'}</button>
+      ${activo?'<button class="btn sm sec" onclick="probarAviso()">Probar ahora</button>':''}
+    </div>
+    <p class="pie" style="text-align:left;margin-top:8px">En iPhone solo llega si abriste la app
+    desde la pantalla de inicio, no desde Safari.</p>
+  </div>`;
+}
+
+async function alternarAviso(){
+  try{
+    if(AVISO.sub){
+      const ep=AVISO.sub.endpoint;
+      await AVISO.sub.unsubscribe().catch(()=>{});
+      await api('avisos/cancelar',{metodo:'POST',cuerpo:{endpoint:ep}});
+      AVISO.sub=null;
+      alerta('<span>🔕</span><div><b>Recordatorio desactivado</b>En este dispositivo ya no te avisará.</div>','ok');
+    }else{
+      const permiso=await Notification.requestPermission();
+      if(permiso!=='granted'){ pintarAvisos();
+        return alerta('<span>⚠️</span><div><b>Hace falta tu permiso</b>Sin autorizar las notificaciones no puedo avisarte.</div>','warn'); }
+      AVISO.sub=await AVISO.reg.pushManager.subscribe({
+        userVisibleOnly:true, applicationServerKey:base64aBytes(AVISO.llave)});
+      const hora=document.getElementById('avHora').value;
+      await api('avisos/suscribir',{metodo:'POST',cuerpo:{sub:AVISO.sub.toJSON(),hora:+hora}});
+      LS.set('finHoraAviso',hora);
+      alerta(`<span>🔔</span><div><b>Recordatorio activado</b>Te avisaré todos los días a las ${hora}:00.</div>`,'ok');
+    }
+  }catch(e){
+    alerta('<span>⚠️</span><div><b>No se pudo cambiar el recordatorio</b>'+esc(e.message)+'</div>','warn');
+  }
+  pintarAvisos();
+}
+async function cambiarHora(){
+  const hora=document.getElementById('avHora').value;
+  LS.set('finHoraAviso',hora);
+  if(AVISO.sub){
+    try{
+      await api('avisos/suscribir',{metodo:'POST',cuerpo:{sub:AVISO.sub.toJSON(),hora:+hora}});
+      alerta(`<span>🕘</span><div><b>Hora cambiada</b>Ahora te aviso a las ${hora}:00.</div>`,'ok');
+    }catch(e){}
+  }
+  pintarAvisos();
+}
+async function probarAviso(){
+  try{
+    const d=await api('avisos/probar',{metodo:'POST'});
+    alerta(`<span>📨</span><div><b>Enviado a ${d.enviados} de ${d.de} dispositivo(s)</b>Debería llegarte en unos segundos.</div>`,'ok');
+  }catch(e){ alerta('<span>⚠️</span><div><b>No se pudo enviar</b>'+esc(e.message)+'</div>','warn'); }
+}
+
 /* ================= GUÍA HABLADA =================
    Lee el instructivo en voz alta, resaltando y centrando el bloque que va
    narrando. Mantiene la pantalla encendida mientras avanza. */
@@ -2159,6 +2272,7 @@ function modoLocal(){
   estado('solo este equipo','#fde68a');
   document.getElementById('hdSub').innerHTML=
     'Datos <b>solo en este dispositivo</b> · <button class="lnk" style="color:#fff" onclick="volverAEntrar()">entrar con mi cuenta</button>';
+  const cr=document.getElementById('recordatorio'); if(cr) cr.hidden=true;
   avisoSinCuenta('Estás trabajando <b>sin cuenta</b>: lo que registres se queda únicamente en este dispositivo y tu pareja no lo verá.');
 }
 /* Aviso fijo mientras no haya cuenta, para que nadie crea que está compartiendo */
@@ -2279,6 +2393,7 @@ async function sesionLista(correo){
     document.getElementById('hdSub').innerHTML=
       `Conectado como <b>${esc(correo)}</b> · <button class="lnk" style="color:#fff" onclick="verHogar()">mi hogar</button> · <button class="lnk" style="color:#fff" onclick="salir()">salir</button>`;
     escucharCambios();
+    iniciarAvisos();
   }catch(e){
     estado('sin conexión','#fca5a5');
     document.getElementById('hdSub').textContent=
