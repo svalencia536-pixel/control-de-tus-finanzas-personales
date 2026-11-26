@@ -229,6 +229,9 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
        font-size:13px;line-height:1.65;margin-top:12px}
 .g-tip.warn{background:rgba(245,158,11,.12);border-color:var(--warn-tx)}
 .g-c{font-weight:800}
+.cod{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:21px;font-weight:800;
+  letter-spacing:3px;background:var(--bg);border:1px dashed var(--p);border-radius:8px;
+  padding:10px 14px;margin:9px 0;display:inline-block;color:var(--p);user-select:all}
 .g-c.ok{color:var(--ok-tx)}.g-c.wr{color:var(--warn-tx)}.g-c.bd{color:var(--bad-tx)}
 /* ---- guía hablada ---- */
 .voz{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
@@ -303,17 +306,29 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
 <body>
 <!-- ===== Entrar a la cuenta del hogar ===== -->
 <div id="ovLogin" class="ov"><div class="ovbox">
-  <h2>🔐 Cuenta del hogar</h2>
-  <p class="sb">Entren <b>los dos con el mismo correo y la misma contraseña</b>. Así comparten un solo
-  presupuesto: lo que registre uno le aparece al otro en cualquier dispositivo.</p>
+  <h2 id="logTit">🔐 Entrar</h2>
+  <p class="sb" id="logSub">Cada uno con su propia cuenta. Si ya tienen un hogar creado,
+  ambos ven y editan el mismo presupuesto.</p>
   <div class="fld"><label>Correo</label>
     <input type="email" id="logMail" autocomplete="username" inputmode="email"
            placeholder="tucorreo@gmail.com"></div>
   <div class="fld"><label>Contraseña</label>
     <input type="password" id="logPass" autocomplete="current-password"
            placeholder="Mínimo 8 caracteres"></div>
+
+  <!-- Solo al crear cuenta -->
+  <div id="camposNuevo" hidden>
+    <div class="fld"><label>Tu nombre</label>
+      <input type="text" id="logNom" autocomplete="name" placeholder="Sergio" maxlength="40"></div>
+    <div class="fld"><label>Código del hogar <span style="text-transform:none;font-weight:600">(solo si tu pareja ya creó uno)</span></label>
+      <input type="text" id="logCod" placeholder="CASA-XXXXX" maxlength="12"
+             style="text-transform:uppercase;letter-spacing:1px"></div>
+    <p class="pie" style="text-align:left;margin:-4px 0 12px">Déjalo vacío si eres el primero:
+    se crea un hogar nuevo y te doy el código para que invites a tu pareja.</p>
+  </div>
+
   <button class="btn" id="btnEntrar" onclick="entrar()">Entrar</button>
-  <button class="btn sec" id="btnCrear" style="width:100%;margin-top:8px" onclick="crearCuenta()">Crear la cuenta del hogar</button>
+  <button class="btn sec" id="btnCrear" style="width:100%;margin-top:8px" onclick="crearCuenta()">Crear una cuenta</button>
   <div id="errLogin" class="err"></div>
   <p class="pie">La contraseña se guarda cifrada; ni yo ni nadie puede leerla. Úsala larga y
   que no repitas en otro lado: es lo único que protege tus datos.</p>
@@ -1551,7 +1566,7 @@ function renderRecent(){
 function txHTML(t){
   return `<div class="tx"><div class="i">
     <div class="c">${esc(t.cat)}</div><div class="n">${esc(t.sub)}</div>
-    <div class="d">${t.fecha} · ${esc(t.cuenta)}${t.det?' · '+esc(t.det):''}</div></div>
+    <div class="d">${t.fecha} · ${esc(t.cuenta)}${t.det?' · '+esc(t.det):''}${t.quien?' · <b>'+esc(t.quien)+'</b>':''}</div></div>
     <div class="m ${t.tipo==='gasto'?'g':'i'} mono">${t.tipo==='gasto'?'−':'+'}${cop(t.monto)}</div>
     <button class="del" onclick="borrar('${t.id}')" title="Eliminar">🗑</button></div>`;
 }
@@ -2176,18 +2191,62 @@ async function entrar(){
       : e.message;
   }finally{ ocupado(false); }
 }
+/* El primer clic en "Crear una cuenta" revela los campos extra; el segundo
+   ya envía. Así la pantalla de entrar queda corta para el uso de todos los días. */
 async function crearCuenta(){
   const err=document.getElementById('errLogin'); err.textContent='';
+  const extra=document.getElementById('camposNuevo');
+  if(extra.hidden){
+    extra.hidden=false;
+    document.getElementById('logTit').textContent='🏠 Crear una cuenta';
+    document.getElementById('logSub').textContent=
+      'Tu cuenta es tuya: tu correo y tu contraseña. El hogar es lo que comparten.';
+    document.getElementById('btnEntrar').textContent='Ya tengo cuenta, entrar';
+    document.getElementById('btnCrear').textContent='Crear mi cuenta';
+    document.getElementById('logPass').setAttribute('autocomplete','new-password');
+    document.getElementById('logNom').focus();
+    return;
+  }
   const correo=document.getElementById('logMail').value.trim();
   const clave=document.getElementById('logPass').value;
+  const nombre=document.getElementById('logNom').value.trim();
+  const codigo=document.getElementById('logCod').value.trim().toUpperCase();
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(correo)) return err.textContent='Ese correo no parece válido.';
   if(clave.length<8) return err.textContent='La contraseña debe tener al menos 8 caracteres.';
+  if(codigo && !/^CASA-[A-Z0-9]{5}$/.test(codigo))
+    return err.textContent='El código se ve así: CASA-7K2MP. Revísalo con quien te lo pasó.';
   ocupado(true,'Creando la cuenta…');
   try{
-    const d=await api('registro',{metodo:'POST',cuerpo:{correo,clave}});
+    const d=await api('registro',{metodo:'POST',cuerpo:{correo,clave,nombre,codigo}});
     await sesionLista(d.correo);
+    if(!d.seUnio && d.codigo) mostrarCodigo(d.codigo, true);
   }catch(e){ err.textContent=e.message; }
   finally{ ocupado(false); }
+}
+/* Tarjeta con el código para invitar a la pareja */
+function mostrarCodigo(codigo, recienCreado){
+  const c=document.getElementById('alerts');
+  c.insertAdjacentHTML('afterbegin',
+   `<div class="al ok"><span>🏠</span><div>
+      <b>${recienCreado?'Tu hogar quedó creado':'Código de tu hogar'}</b>
+      Pásale este código a tu pareja para que lo escriba al crear <i>su</i> cuenta
+      y vean el mismo presupuesto:
+      <div class="cod">${esc(codigo)}</div>
+      <button class="lnk" onclick="copiarCodigo('${esc(codigo)}')">copiar código</button>
+    </div></div>`);
+}
+function copiarCodigo(c){
+  navigator.clipboard?.writeText(c)
+    .then(()=>alerta('<span>📋</span><div><b>Código copiado</b>Pégaselo a tu pareja.</div>','ok'))
+    .catch(()=>alert('Código del hogar: '+c));
+}
+async function verHogar(){
+  try{
+    const h=await api('hogar');
+    const quienes=h.miembros.map(m=>esc(m.nombre||m.correo)).join(' y ');
+    alerta(`<span>🏠</span><div><b>En este hogar están: ${quienes}</b>
+      Código para invitar a alguien más: <b>${esc(h.codigo)}</b></div>`,'ok');
+  }catch(e){ alerta('<span>⚠️</span><div><b>No se pudo leer el hogar</b>'+esc(e.message)+'</div>','warn'); }
 }
 async function salir(){
   if(!confirm('¿Cerrar sesión en este dispositivo?'))return;
@@ -2203,7 +2262,7 @@ async function sesionLista(correo){
     await bajarTodo();
     estado('sincronizado','#86efac');
     document.getElementById('hdSub').innerHTML=
-      `Conectado como <b>${esc(correo)}</b> · <button class="lnk" style="color:#fff" onclick="salir()">salir</button>`;
+      `Conectado como <b>${esc(correo)}</b> · <button class="lnk" style="color:#fff" onclick="verHogar()">mi hogar</button> · <button class="lnk" style="color:#fff" onclick="salir()">salir</button>`;
     escucharCambios();
   }catch(e){
     estado('sin conexión','#fca5a5');

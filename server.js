@@ -33,17 +33,32 @@ const pool = new pg.Pool({
   idleTimeoutMillis: 30000
 });
 
+/* Genera un código corto y fácil de dictar por teléfono. Se omiten las letras
+   y cifras que se confunden al leerlas en voz alta (O/0, I/1, etc.). */
+const LETRAS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const nuevoCodigo = () =>
+  'CASA-' + Array.from({ length: 5 }, () => LETRAS[Math.floor(Math.random() * LETRAS.length)]).join('');
+
 async function migrar() {
+  /* Los datos pertenecen al HOGAR, no a la persona: así cada uno entra con su
+     propio correo y contraseña pero ambos ven y editan el mismo presupuesto. */
   await pool.query(`
+    create table if not exists hogares (
+      id     uuid primary key default gen_random_uuid(),
+      nombre text not null default 'Mi hogar',
+      codigo text unique not null,
+      creado timestamptz not null default now()
+    );
     create table if not exists usuarios (
       id          uuid primary key default gen_random_uuid(),
       correo      text unique not null,
       clave_hash  text not null,
+      nombre      text,
       creado      timestamptz not null default now()
     );
     create table if not exists movimientos (
       id       uuid primary key,
-      user_id  uuid not null references usuarios(id) on delete cascade,
+      user_id  uuid references usuarios(id) on delete set null,
       tipo     text not null check (tipo in ('gasto','ingreso')),
       fecha    date not null,
       cat      text not null,
@@ -53,15 +68,41 @@ async function migrar() {
       det      text,
       creado   timestamptz not null default now()
     );
-    create index if not exists mov_user_fecha on movimientos (user_id, fecha desc);
     create table if not exists maestros (
-      user_id     uuid primary key references usuarios(id) on delete cascade,
+      user_id     uuid,
       cfg         jsonb not null,
       patrimonio  jsonb not null default '{"activos":[],"pasivos":[],"historia":{},"cierres":{}}'::jsonb,
       actualizado timestamptz not null default now()
     );
   `);
-  console.log('Base de datos lista');
+
+  /* Paso a hogares. Se hace en varios ALTER sueltos con IF NOT EXISTS para que
+     volver a arrancar el servidor no rompa nada. */
+  await pool.query(`alter table usuarios    add column if not exists hogar_id uuid references hogares(id) on delete set null`);
+  await pool.query(`alter table usuarios    add column if not exists nombre   text`);
+  await pool.query(`alter table movimientos add column if not exists hogar_id uuid references hogares(id) on delete cascade`);
+  await pool.query(`alter table movimientos add column if not exists creado_por uuid references usuarios(id) on delete set null`);
+  await pool.query(`alter table maestros    add column if not exists hogar_id uuid references hogares(id) on delete cascade`);
+
+  /* Cada usuario que todavía no tenga hogar recibe el suyo, y sus datos se
+     mudan a él. Sin esto, quien ya se había registrado perdería lo suyo. */
+  const { rows: sinHogar } = await pool.query('select id from usuarios where hogar_id is null');
+  for (const u of sinHogar) {
+    let h;
+    for (let i = 0; i < 5 && !h; i++) {
+      try {
+        const r = await pool.query('insert into hogares (codigo) values ($1) returning id', [nuevoCodigo()]);
+        h = r.rows[0].id;
+      } catch (e) { if (e.code !== '23505') throw e; }   // código repetido: reintenta
+    }
+    await pool.query('update usuarios    set hogar_id=$1 where id=$2', [h, u.id]);
+    await pool.query('update movimientos set hogar_id=$1, creado_por=coalesce(creado_por,user_id) where user_id=$2 and hogar_id is null', [h, u.id]);
+    await pool.query('update maestros    set hogar_id=$1 where user_id=$2 and hogar_id is null', [h, u.id]);
+  }
+
+  await pool.query(`create index if not exists mov_hogar_fecha on movimientos (hogar_id, fecha desc)`);
+  await pool.query(`create unique index if not exists maestros_hogar on maestros (hogar_id)`);
+  console.log('Base de datos lista (hogares, usuarios, movimientos, maestros)');
 }
 
 /* ───────────────────────── sesión ───────────────────────── */
@@ -85,16 +126,30 @@ function darSesion(res, userId) {
     path: '/'
   });
 }
-function conSesion(req, res, next) {
+/* Además de validar la sesión, resuelve a qué hogar pertenece quien entra:
+   todas las consultas de datos filtran por ese hogar, nunca por la persona. */
+async function conSesion(req, res, next) {
   const t = req.cookies?.[COOKIE];
   if (!t) return res.status(401).json({ error: 'Sin sesión' });
-  try {
-    req.uid = jwt.verify(t, SECRETO).uid;
-    next();
-  } catch {
+  let uid;
+  try { uid = jwt.verify(t, SECRETO).uid; }
+  catch {
     res.clearCookie(COOKIE, { path: '/' });
-    res.status(401).json({ error: 'La sesión expiró. Vuelve a entrar.' });
+    return res.status(401).json({ error: 'La sesión expiró. Vuelve a entrar.' });
   }
+  try {
+    const { rows } = await pool.query(
+      'select id, correo, nombre, hogar_id from usuarios where id=$1', [uid]);
+    if (!rows.length) {
+      res.clearCookie(COOKIE, { path: '/' });
+      return res.status(401).json({ error: 'Sin sesión' });
+    }
+    req.uid = rows[0].id;
+    req.correo = rows[0].correo;
+    req.nombre = rows[0].nombre;
+    req.hogar = rows[0].hogar_id;
+    next();
+  } catch (e) { res.status(500).json({ error: 'Error de servidor' }); }
 }
 
 /* Freno a la fuerza bruta: 8 intentos fallidos por correo+IP cada 15 minutos */
@@ -128,24 +183,77 @@ const texto = (v, max) => (v == null ? null : String(v).slice(0, max));
 
 /* ───────────────────────── cuentas ───────────────────────── */
 app.post('/api/registro', async (req, res) => {
+  const cli = await pool.connect();
   try {
     const correo = String(req.body?.correo || '').trim().toLowerCase();
     const clave = String(req.body?.clave || '');
+    const nombre = texto(String(req.body?.nombre || '').trim(), 40) || null;
+    const codigo = String(req.body?.codigo || '').trim().toUpperCase();
     if (!correoValido(correo)) return res.status(400).json({ error: 'El correo no parece válido.' });
     if (clave.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
 
-    const ya = await pool.query('select 1 from usuarios where correo=$1', [correo]);
+    const ya = await cli.query('select 1 from usuarios where correo=$1', [correo]);
     if (ya.rowCount) return res.status(409).json({ error: 'Ya existe una cuenta con ese correo. Usa "Entrar".' });
 
+    /* Con código se entra al hogar que ya existe; sin código se crea uno nuevo */
+    let hogar;
+    if (codigo) {
+      const h = await cli.query('select id from hogares where codigo=$1', [codigo]);
+      if (!h.rowCount) return res.status(404).json({ error: 'Ese código de hogar no existe. Revísalo con quien te lo pasó.' });
+      hogar = h.rows[0].id;
+    }
+
+    await cli.query('begin');
+    if (!hogar) {
+      for (let i = 0; i < 5 && !hogar; i++) {
+        try {
+          const r = await cli.query('insert into hogares (codigo) values ($1) returning id', [nuevoCodigo()]);
+          hogar = r.rows[0].id;
+        } catch (e) { if (e.code !== '23505') throw e; }
+      }
+    }
     const hash = await bcrypt.hash(clave, 12);
-    const { rows } = await pool.query(
-      'insert into usuarios (correo, clave_hash) values ($1,$2) returning id', [correo, hash]);
+    const { rows } = await cli.query(
+      'insert into usuarios (correo, clave_hash, nombre, hogar_id) values ($1,$2,$3,$4) returning id',
+      [correo, hash, nombre, hogar]);
+    await cli.query('commit');
     darSesion(res, rows[0].id);
-    res.json({ correo });
+    const { rows: hr } = await pool.query('select codigo from hogares where id=$1', [hogar]);
+    res.json({ correo, nombre, codigo: hr[0]?.codigo, seUnio: !!codigo });
   } catch (e) {
+    await cli.query('rollback').catch(() => {});
     console.error('registro', e);
     res.status(500).json({ error: 'No se pudo crear la cuenta.' });
-  }
+  } finally { cli.release(); }
+});
+
+/* Quién está en el hogar y con qué código se invita a alguien más */
+app.get('/api/hogar', conSesion, async (req, res) => {
+  try {
+    const [h, m] = await Promise.all([
+      pool.query('select codigo, nombre from hogares where id=$1', [req.hogar]),
+      pool.query('select correo, nombre, creado from usuarios where hogar_id=$1 order by creado', [req.hogar])
+    ]);
+    res.json({ codigo: h.rows[0]?.codigo || null, nombre: h.rows[0]?.nombre || 'Mi hogar',
+               miembros: m.rows.map(u => ({ correo: u.correo, nombre: u.nombre })) });
+  } catch (e) { res.status(500).json({ error: 'No se pudo leer el hogar.' }); }
+});
+
+/* Unirse a otro hogar desde una cuenta ya creada. Pide la contraseña porque
+   deja de verse lo propio para pasar a ver lo del otro hogar. */
+app.post('/api/hogar/unirse', conSesion, async (req, res) => {
+  try {
+    const codigo = String(req.body?.codigo || '').trim().toUpperCase();
+    const clave = String(req.body?.clave || '');
+    const { rows: u } = await pool.query('select clave_hash from usuarios where id=$1', [req.uid]);
+    if (!await bcrypt.compare(clave, u[0].clave_hash))
+      return res.status(401).json({ error: 'Contraseña incorrecta.' });
+    const h = await pool.query('select id from hogares where codigo=$1', [codigo]);
+    if (!h.rowCount) return res.status(404).json({ error: 'Ese código de hogar no existe.' });
+    if (h.rows[0].id === req.hogar) return res.status(400).json({ error: 'Ya perteneces a ese hogar.' });
+    await pool.query('update usuarios set hogar_id=$1 where id=$2', [h.rows[0].id, req.uid]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'No se pudo cambiar de hogar.' }); }
 });
 
 app.post('/api/entrar', async (req, res) => {
@@ -175,24 +283,26 @@ app.post('/api/salir', (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/yo', conSesion, async (req, res) => {
-  const { rows } = await pool.query('select correo from usuarios where id=$1', [req.uid]);
-  if (!rows.length) return res.status(401).json({ error: 'Sin sesión' });
-  res.json({ correo: rows[0].correo });
+app.get('/api/yo', conSesion, (req, res) => {
+  res.json({ correo: req.correo, nombre: req.nombre });
 });
 
 /* ───────────────────────── datos ───────────────────────── */
 app.get('/api/datos', conSesion, async (req, res) => {
   try {
     const [mv, ms] = await Promise.all([
-      pool.query('select id,tipo,fecha,cat,sub,monto,cuenta,det from movimientos where user_id=$1 order by fecha desc', [req.uid]),
-      pool.query('select cfg, patrimonio, actualizado from maestros where user_id=$1', [req.uid])
+      pool.query(`select m.id,m.tipo,m.fecha,m.cat,m.sub,m.monto,m.cuenta,m.det,
+                         coalesce(u.nombre, split_part(u.correo,'@',1)) as quien
+                  from movimientos m left join usuarios u on u.id=m.creado_por
+                  where m.hogar_id=$1 order by m.fecha desc`, [req.hogar]),
+      pool.query('select cfg, patrimonio, actualizado from maestros where hogar_id=$1', [req.hogar])
     ]);
     res.json({
       tx: mv.rows.map(r => ({
         id: r.id, tipo: r.tipo,
         fecha: r.fecha instanceof Date ? r.fecha.toISOString().slice(0, 10) : String(r.fecha).slice(0, 10),
-        cat: r.cat, sub: r.sub, monto: Number(r.monto), cuenta: r.cuenta || '', det: r.det || ''
+        cat: r.cat, sub: r.sub, monto: Number(r.monto), cuenta: r.cuenta || '', det: r.det || '',
+        quien: r.quien || ''
       })),
       cfg: ms.rows[0]?.cfg || null,
       pat: ms.rows[0]?.patrimonio || null,
@@ -210,9 +320,9 @@ app.get('/api/sello', conSesion, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `select greatest(
-         coalesce((select max(creado) from movimientos where user_id=$1), to_timestamp(0)),
-         coalesce((select actualizado from maestros where user_id=$1), to_timestamp(0))
-       ) as s, (select count(*) from movimientos where user_id=$1) as n`, [req.uid]);
+         coalesce((select max(creado) from movimientos where hogar_id=$1), to_timestamp(0)),
+         coalesce((select actualizado from maestros where hogar_id=$1), to_timestamp(0))
+       ) as s, (select count(*) from movimientos where hogar_id=$1) as n`, [req.hogar]);
     res.json({ sello: rows[0].s, n: Number(rows[0].n) });
   } catch (e) { res.status(500).json({ error: 'error' }); }
 });
@@ -226,9 +336,9 @@ app.post('/api/movimientos', conSesion, async (req, res) => {
     if (!(monto > 0) || !isFinite(monto)) return res.status(400).json({ error: 'Monto inválido' });
     const id = /^[0-9a-f-]{36}$/i.test(m.id || '') ? m.id : randomUUID();
     await pool.query(
-      `insert into movimientos (id,user_id,tipo,fecha,cat,sub,monto,cuenta,det)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict (id) do nothing`,
-      [id, req.uid, m.tipo, m.fecha, texto(m.cat, 80), texto(m.sub, 80), monto,
+      `insert into movimientos (id,hogar_id,creado_por,tipo,fecha,cat,sub,monto,cuenta,det)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) on conflict (id) do nothing`,
+      [id, req.hogar, req.uid, m.tipo, m.fecha, texto(m.cat, 80), texto(m.sub, 80), monto,
        texto(m.cuenta, 60), texto(m.det, 300)]);
     res.json({ id });
   } catch (e) {
@@ -239,7 +349,7 @@ app.post('/api/movimientos', conSesion, async (req, res) => {
 
 app.delete('/api/movimientos/:id', conSesion, async (req, res) => {
   try {
-    await pool.query('delete from movimientos where id=$1 and user_id=$2', [req.params.id, req.uid]);
+    await pool.query('delete from movimientos where id=$1 and hogar_id=$2', [req.params.id, req.hogar]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: 'No se pudo eliminar.' }); }
 });
@@ -249,9 +359,9 @@ app.put('/api/maestros', conSesion, async (req, res) => {
     const { cfg, pat } = req.body || {};
     if (!cfg || typeof cfg !== 'object') return res.status(400).json({ error: 'Faltan las categorías' });
     await pool.query(
-      `insert into maestros (user_id,cfg,patrimonio,actualizado) values ($1,$2,$3,now())
-       on conflict (user_id) do update set cfg=$2, patrimonio=$3, actualizado=now()`,
-      [req.uid, cfg, pat || {}]);
+      `insert into maestros (hogar_id,cfg,patrimonio,actualizado) values ($1,$2,$3,now())
+       on conflict (hogar_id) do update set cfg=$2, patrimonio=$3, actualizado=now()`,
+      [req.hogar, cfg, pat || {}]);
     res.json({ ok: true });
   } catch (e) {
     console.error('maestros', e);
@@ -268,22 +378,22 @@ app.post('/api/importar', conSesion, async (req, res) => {
     if (!Array.isArray(tx) || tx.length > 20000)
       return res.status(400).json({ error: 'Respaldo inválido o demasiado grande.' });
     await cli.query('begin');
-    await cli.query('delete from movimientos where user_id=$1', [req.uid]);
+    await cli.query('delete from movimientos where hogar_id=$1', [req.hogar]);
     for (const m of tx) {
       const monto = Number(m.monto);
       if (!['gasto', 'ingreso'].includes(m.tipo)) continue;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(m.fecha || '')) continue;
       if (!(monto > 0) || !isFinite(monto)) continue;
       await cli.query(
-        `insert into movimientos (id,user_id,tipo,fecha,cat,sub,monto,cuenta,det)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict (id) do nothing`,
-        [/^[0-9a-f-]{36}$/i.test(m.id || '') ? m.id : randomUUID(), req.uid, m.tipo, m.fecha,
+        `insert into movimientos (id,hogar_id,creado_por,tipo,fecha,cat,sub,monto,cuenta,det)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) on conflict (id) do nothing`,
+        [/^[0-9a-f-]{36}$/i.test(m.id || '') ? m.id : randomUUID(), req.hogar, req.uid, m.tipo, m.fecha,
          texto(m.cat, 80), texto(m.sub, 80), monto, texto(m.cuenta, 60), texto(m.det, 300)]);
     }
     if (cfg) await cli.query(
-      `insert into maestros (user_id,cfg,patrimonio,actualizado) values ($1,$2,$3,now())
-       on conflict (user_id) do update set cfg=$2, patrimonio=$3, actualizado=now()`,
-      [req.uid, cfg, pat || {}]);
+      `insert into maestros (hogar_id,cfg,patrimonio,actualizado) values ($1,$2,$3,now())
+       on conflict (hogar_id) do update set cfg=$2, patrimonio=$3, actualizado=now()`,
+      [req.hogar, cfg, pat || {}]);
     await cli.query('commit');
     res.json({ ok: true, n: tx.length });
   } catch (e) {
