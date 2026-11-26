@@ -3,8 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>💰 Finanzas Personales</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<title>Finanzas FVR</title>
+<meta name="theme-color" content="#143257">
+<meta name="description" content="Control de finanzas personales del hogar: presupuesto por subcategoría, cierre mensual y patrimonio.">
+<!-- Ícono propio en lugar del globo por defecto del navegador. Va incrustado
+     como SVG para no depender de un archivo aparte ni de la conexión. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23143257'/%3E%3Crect x='14' y='34' width='8' height='16' rx='2' fill='%235598e7'/%3E%3Crect x='28' y='26' width='8' height='24' rx='2' fill='%233987e5'/%3E%3Crect x='42' y='15' width='8' height='35' rx='2' fill='%231baf7a'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23143257'/%3E%3Crect x='14' y='34' width='8' height='16' rx='2' fill='%235598e7'/%3E%3Crect x='28' y='26' width='8' height='24' rx='2' fill='%233987e5'/%3E%3Crect x='42' y='15' width='8' height='35' rx='2' fill='%231baf7a'/%3E%3C/svg%3E">
+<meta name="apple-mobile-web-app-title" content="Finanzas FVR">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <script>
 /* Se aplica antes de pintar la página para que no haya un destello blanco
    al abrirla de noche. Tres estados: auto (sigue al sistema), claro y oscuro. */
@@ -294,37 +301,33 @@ input:focus,select:focus{outline:2px solid var(--p);border-color:transparent}
 </style>
 </head>
 <body>
-<!-- ===== Pantalla 1: conectar el proyecto (solo la primera vez) ===== -->
-<div id="ovSetup" class="ov"><div class="ovbox">
-  <h2>🔌 Conectar con la nube</h2>
-  <p class="sb">Pega los datos de tu proyecto de Supabase para que tú y tu pareja vean el mismo presupuesto desde cualquier dispositivo. Los encuentras en <b>Project Settings → API</b>.</p>
-  <div class="fld"><label>Project URL</label><input id="cfgUrl" placeholder="https://xxxxx.supabase.co"></div>
-  <div class="fld"><label>Anon public key</label><input id="cfgKey" placeholder="eyJhbGciOi..."></div>
-  <button class="btn" onclick="guardarConexion()">Conectar</button>
-  <div id="errSetup" class="err"></div>
-  <div style="text-align:center"><button class="lnk" onclick="modoLocal()">Usar sin nube, solo en este dispositivo</button></div>
-  <div class="sep"><span>o si solo quieres verla</span></div>
-  <button class="btn demo" onclick="demo()">👀 Ver demostración con datos de ejemplo</button>
-  <p class="pie">Entra sin registrarte. Verás un mes real cargado para explorar los tableros. Nada se guarda en ningún servidor.</p>
-</div></div>
-
-<!-- ===== Pantalla 2: entrar a la cuenta del hogar ===== -->
+<!-- ===== Entrar a la cuenta del hogar ===== -->
 <div id="ovLogin" class="ov"><div class="ovbox">
   <h2>🔐 Cuenta del hogar</h2>
-  <p class="sb">Usen <b>el mismo correo y la misma contraseña</b> los dos. Así comparten un solo presupuesto: lo que registre uno, lo ve el otro al instante.</p>
-  <div class="fld"><label>Correo</label><input type="email" id="logMail" autocomplete="username" placeholder="hogar@ejemplo.com"></div>
-  <div class="fld"><label>Contraseña</label><input type="password" id="logPass" autocomplete="current-password" placeholder="Mínimo 6 caracteres"></div>
-  <button class="btn" onclick="entrar()">Entrar</button>
-  <button class="btn sec" style="width:100%;margin-top:8px" onclick="crearCuenta()">Crear la cuenta del hogar</button>
+  <p class="sb">Entren <b>los dos con el mismo correo y la misma contraseña</b>. Así comparten un solo
+  presupuesto: lo que registre uno le aparece al otro en cualquier dispositivo.</p>
+  <div class="fld"><label>Correo</label>
+    <input type="email" id="logMail" autocomplete="username" inputmode="email"
+           placeholder="tucorreo@gmail.com"></div>
+  <div class="fld"><label>Contraseña</label>
+    <input type="password" id="logPass" autocomplete="current-password"
+           placeholder="Mínimo 8 caracteres"></div>
+  <button class="btn" id="btnEntrar" onclick="entrar()">Entrar</button>
+  <button class="btn sec" id="btnCrear" style="width:100%;margin-top:8px" onclick="crearCuenta()">Crear la cuenta del hogar</button>
   <div id="errLogin" class="err"></div>
-  <div style="text-align:center"><button class="lnk" onclick="modoLocal()">Trabajar sin nube en este dispositivo</button></div>
+  <p class="pie">La contraseña se guarda cifrada; ni yo ni nadie puede leerla. Úsala larga y
+  que no repitas en otro lado: es lo único que protege tus datos.</p>
+  <div class="sep"><span>o si solo quieres verla</span></div>
+  <button class="btn demo" onclick="demo()">👀 Ver demostración con datos de ejemplo</button>
+  <p class="pie">Entra sin registrarte, con un mes de ejemplo. Nada se guarda en el servidor.</p>
+  <div style="text-align:center"><button class="lnk" onclick="modoLocal()">Trabajar sin cuenta, solo en este dispositivo</button></div>
 </div></div>
 
 <div class="wrap">
 <header>
   <div class="hd">
     <div>
-      <h1>💰 Finanzas Personales</h1>
+      <h1>Finanzas FVR</h1>
       <p id="hdSub">Control de gastos e ingresos</p>
     </div>
     <div class="hdacc">
@@ -708,11 +711,10 @@ PAT.historia=PAT.historia||{}; PAT.cierres=PAT.cierres||{};
 let tipo='gasto', editMode=false;
 
 /* ================= CAPA DE NUBE =================
-   Si hay proyecto configurado y sesión iniciada, los datos viven en Supabase
-   y el navegador guarda una copia local por si se va el internet.
-   Si no, funciona igual que antes: solo en este dispositivo.        */
-const NUBE = { url:LS.get('sbUrl')||'', key:LS.get('sbKey')||'',
-               cli:null, user:null, on:false, local:LS.get('finLocal')==='1' };
+   Los datos viven en la base de datos del servidor y el navegador guarda una
+   copia local para seguir funcionando sin internet. Quien prefiera no usar
+   cuenta puede trabajar solo en su dispositivo.                      */
+const NUBE = { on:false, correo:null, local:LS.get('finLocal')==='1', sello:null, timer:null };
 
 const nuevoId = () => (crypto.randomUUID ? crypto.randomUUID()
   : 'id-'+Date.now()+'-'+Math.random().toString(16).slice(2));
@@ -727,48 +729,62 @@ const saveLocal=()=>{LS.set('finTx',JSON.stringify(TX));LS.set('finCfg',JSON.str
 /* save() se mantiene con el mismo nombre para no tocar el resto del código */
 const save=()=>{ saveLocal(); if(NUBE.on) subirMaestros(); };
 
+/* Toda llamada al servidor pasa por aquí: una sola forma de mandar la sesión
+   y de reaccionar cuando caduca. */
+async function api(ruta, opc={}){
+  const r = await fetch('/api/'+ruta, {
+    method: opc.metodo || 'GET',
+    credentials: 'same-origin',
+    headers: opc.cuerpo ? {'Content-Type':'application/json'} : undefined,
+    body: opc.cuerpo ? JSON.stringify(opc.cuerpo) : undefined
+  });
+  if(r.status===401){ NUBE.on=false; throw new Error('sesion'); }
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(d.error || 'Falló la conexión');
+  return d;
+}
+
 async function subirMaestros(){
-  try{
-    const {error}=await NUBE.cli.from('maestros')
-      .upsert({user_id:NUBE.user.id,cfg:CFG,patrimonio:PAT,updated_at:new Date().toISOString()});
-    if(error) throw error;
-  }catch(e){ estado('sin sincronizar','#fca5a5'); }
+  try{ await api('maestros',{metodo:'PUT',cuerpo:{cfg:CFG,pat:PAT}});
+       estado('sincronizado','#86efac'); }
+  catch(e){ estado('sin sincronizar','#fca5a5'); }
 }
 async function subirMovimiento(t){
-  try{
-    const {error}=await NUBE.cli.from('movimientos').insert({
-      id:t.id,user_id:NUBE.user.id,tipo:t.tipo,fecha:t.fecha,cat:t.cat,
-      sub:t.sub,monto:t.monto,cuenta:t.cuenta,det:t.det||null});
-    if(error) throw error;
-    estado('sincronizado','#86efac');
-  }catch(e){ estado('sin sincronizar','#fca5a5'); }
+  try{ await api('movimientos',{metodo:'POST',cuerpo:t}); estado('sincronizado','#86efac'); }
+  catch(e){ estado('sin sincronizar','#fca5a5'); }
 }
 async function borrarMovimiento(id){
-  try{ await NUBE.cli.from('movimientos').delete().eq('id',id); }
+  try{ await api('movimientos/'+encodeURIComponent(id),{metodo:'DELETE'}); }
   catch(e){ estado('sin sincronizar','#fca5a5'); }
 }
 async function bajarTodo(){
-  const [mv,ms]=await Promise.all([
-    NUBE.cli.from('movimientos').select('*').order('fecha',{ascending:false}),
-    NUBE.cli.from('maestros').select('cfg,patrimonio').eq('user_id',NUBE.user.id).maybeSingle()
-  ]);
-  if(mv.error) throw mv.error;
-  TX = (mv.data||[]).map(r=>({id:r.id,tipo:r.tipo,fecha:r.fecha,cat:r.cat,
-        sub:r.sub,monto:+r.monto,cuenta:r.cuenta||'',det:r.det||''}));
-  if(ms.data && ms.data.cfg){
-    CFG=ms.data.cfg;
-    if(ms.data.patrimonio) PAT=ms.data.patrimonio;
-  } else await subirMaestros();
+  const d = await api('datos');
+  TX = d.tx || [];
+  if(d.cfg){ CFG = d.cfg; if(d.pat && d.pat.activos) PAT = d.pat; }
+  else await subirMaestros();      // primera vez: se suben las categorías base
+  PAT.historia = PAT.historia||{}; PAT.cierres = PAT.cierres||{};
+  NUBE.sello = d.sello;
   saveLocal();
 }
+
+/* Revisa si el otro dispositivo cambió algo. Se consulta solo una marca de
+   tiempo, no los datos completos, para no gastar conexión de más. */
+async function mirarCambios(){
+  if(!NUBE.on || document.hidden) return;
+  try{
+    const d = await api('sello');
+    if(d.sello && d.sello !== NUBE.sello){
+      await bajarTodo(); fillCat(); fillSub(); render();
+      estado('actualizado','#86efac');
+    }
+  }catch(e){ /* sin conexión: se reintenta en el siguiente ciclo */ }
+}
 function escucharCambios(){
-  NUBE.cli.channel('sync')
-    .on('postgres_changes',{event:'*',schema:'public',table:'movimientos'},async()=>{
-      try{ await bajarTodo(); fillCat(); fillSub(); render(); estado('sincronizado','#86efac'); }catch(e){}
-    })
-    .on('postgres_changes',{event:'*',schema:'public',table:'maestros'},async()=>{
-      try{ await bajarTodo(); fillCat(); fillSub(); render(); }catch(e){}
-    }).subscribe();
+  clearInterval(NUBE.timer);
+  NUBE.timer = setInterval(mirarCambios, 20000);
+  /* Al volver a la app se revisa de inmediato, sin esperar el ciclo */
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) mirarCambios(); });
+  window.addEventListener('online', mirarCambios);
 }
 /* formato financiero único: $ con puntos de miles y sin decimales */
 const cop=v=>'$'+Math.round(+v||0).toLocaleString('es-CO',{maximumFractionDigits:0});
@@ -1758,11 +1774,8 @@ function importJSON(inp){
       saveLocal();
       if(NUBE.on){
         estado('subiendo respaldo…','#fde68a');
-        NUBE.cli.from('movimientos').delete().eq('user_id',NUBE.user.id)
-          .then(()=>NUBE.cli.from('movimientos').insert(
-            TX.map(t=>({id:t.id,user_id:NUBE.user.id,tipo:t.tipo,fecha:t.fecha,cat:t.cat,
-              sub:t.sub,monto:t.monto,cuenta:t.cuenta,det:t.det||null}))))
-          .then(()=>{subirMaestros();estado('sincronizado','#86efac');})
+        api('importar',{metodo:'POST',cuerpo:{tx:TX,cfg:CFG,pat:PAT}})
+          .then(()=>{ NUBE.sello=null; estado('sincronizado','#86efac'); })
           .catch(()=>estado('sin sincronizar','#fca5a5'));
       }
       fillCat(); fillSub(); render();
@@ -2115,19 +2128,9 @@ if('speechSynthesis' in window)
 /* ================= ACCESO A LA NUBE ================= */
 const ov=(id,on)=>document.getElementById(id).classList.toggle('on',on);
 
-function guardarConexion(){
-  const u=document.getElementById('cfgUrl').value.trim().replace(/\/+$/,'');
-  const k=document.getElementById('cfgKey').value.trim();
-  const err=document.getElementById('errSetup');
-  if(!/^https:\/\/.+\.supabase\.co$/.test(u)) return err.textContent='La URL debe verse así: https://xxxxx.supabase.co';
-  if(k.length<30) return err.textContent='La anon key parece incompleta. Cópiala completa desde Project Settings → API.';
-  LS.set('sbUrl',u); LS.set('sbKey',k);
-  LS.del('finLocal');
-  location.reload();
-}
 function modoLocal(){
   LS.set('finLocal','1');
-  ov('ovSetup',false); ov('ovLogin',false);
+  ov('ovLogin',false);
   NUBE.on=false;
   estado('solo este equipo','#fde68a');
   document.getElementById('hdSub').textContent='Control de gastos e ingresos · datos solo en este dispositivo';
@@ -2136,7 +2139,7 @@ function modoLocal(){
    Pensada para mostrar la app a alguien en el celular sin explicarle nada. */
 function demo(){
   NUBE.on=false;
-  ov('ovSetup',false); ov('ovLogin',false);
+  ov('ovLogin',false);
   estado('demostración','#fde68a');
   document.getElementById('hdSub').innerHTML=
     'Datos de ejemplo · <button class="lnk" style="color:#fff" onclick="salirDemo()">empezar de cero</button>';
@@ -2152,45 +2155,60 @@ function salirDemo(){
   LS.clear();
   location.reload();
 }
+function ocupado(si,texto){
+  ['btnEntrar','btnCrear'].forEach(id=>{
+    const b=document.getElementById(id); if(b) b.disabled=si;
+  });
+  if(texto) document.getElementById('errLogin').textContent=texto;
+}
 async function entrar(){
   const err=document.getElementById('errLogin'); err.textContent='';
-  const email=document.getElementById('logMail').value.trim();
-  const password=document.getElementById('logPass').value;
-  if(!email||!password) return err.textContent='Escribe el correo y la contraseña.';
-  const {data,error}=await NUBE.cli.auth.signInWithPassword({email,password});
-  if(error) return err.textContent = /Invalid login/i.test(error.message)
-    ? 'Correo o contraseña incorrectos. Si es la primera vez, usa "Crear la cuenta del hogar".'
-    : error.message;
-  await sesionLista(data.user);
+  const correo=document.getElementById('logMail').value.trim();
+  const clave=document.getElementById('logPass').value;
+  if(!correo||!clave) return err.textContent='Escribe el correo y la contraseña.';
+  ocupado(true,'Entrando…');
+  try{
+    const d=await api('entrar',{metodo:'POST',cuerpo:{correo,clave}});
+    await sesionLista(d.correo);
+  }catch(e){
+    err.textContent = e.message==='sesion'
+      ? 'Correo o contraseña incorrectos. Si es la primera vez, usa "Crear la cuenta del hogar".'
+      : e.message;
+  }finally{ ocupado(false); }
 }
 async function crearCuenta(){
   const err=document.getElementById('errLogin'); err.textContent='';
-  const email=document.getElementById('logMail').value.trim();
-  const password=document.getElementById('logPass').value;
-  if(!email||password.length<6) return err.textContent='Necesitas un correo válido y una contraseña de al menos 6 caracteres.';
-  const {data,error}=await NUBE.cli.auth.signUp({email,password});
-  if(error) return err.textContent=error.message;
-  if(!data.session) return err.textContent='Cuenta creada. Revisa tu correo, confirma el registro y luego pulsa "Entrar".';
-  await sesionLista(data.user);
+  const correo=document.getElementById('logMail').value.trim();
+  const clave=document.getElementById('logPass').value;
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(correo)) return err.textContent='Ese correo no parece válido.';
+  if(clave.length<8) return err.textContent='La contraseña debe tener al menos 8 caracteres.';
+  ocupado(true,'Creando la cuenta…');
+  try{
+    const d=await api('registro',{metodo:'POST',cuerpo:{correo,clave}});
+    await sesionLista(d.correo);
+  }catch(e){ err.textContent=e.message; }
+  finally{ ocupado(false); }
 }
 async function salir(){
   if(!confirm('¿Cerrar sesión en este dispositivo?'))return;
-  await NUBE.cli.auth.signOut();
+  try{ await api('salir',{metodo:'POST'}); }catch(e){}
+  LS.del('finTx'); LS.del('finCfg'); LS.del('finPat');
   location.reload();
 }
-async function sesionLista(user){
-  NUBE.user=user; NUBE.on=true;
-  ov('ovLogin',false); ov('ovSetup',false);
+async function sesionLista(correo){
+  NUBE.on=true; NUBE.correo=correo;
+  ov('ovLogin',false);
   estado('sincronizando…','#fde68a');
   try{
     await bajarTodo();
     estado('sincronizado','#86efac');
     document.getElementById('hdSub').innerHTML=
-      `Conectado como <b>${esc(user.email)}</b> · <button class="lnk" style="color:#fff" onclick="salir()">salir</button>`;
+      `Conectado como <b>${esc(correo)}</b> · <button class="lnk" style="color:#fff" onclick="salir()">salir</button>`;
     escucharCambios();
   }catch(e){
     estado('sin conexión','#fca5a5');
-    document.getElementById('hdSub').textContent='No se pudieron traer los datos. ¿Ejecutaste el script SQL en Supabase?';
+    document.getElementById('hdSub').textContent=
+      'Entraste, pero no se pudieron traer los datos. Trabajando con la copia de este equipo.';
   }
   fillCat(); fillSub(); render();
 }
@@ -2206,16 +2224,14 @@ render();
 
 (async function arranque(){
   if(NUBE.local){ modoLocal(); return; }
-  if(!NUBE.url||!NUBE.key){ estado('sin conectar','#fde68a'); ov('ovSetup',true); return; }
-  if(typeof supabase==='undefined'){
-    estado('sin internet','#fca5a5');
-    document.getElementById('hdSub').textContent='No se pudo cargar la nube. Trabajando con los datos de este dispositivo.';
-    return;
+  /* ¿Hay sesión abierta de antes? La cookie la manda el navegador sola. */
+  try{
+    const d=await api('yo');
+    await sesionLista(d.correo);
+  }catch(e){
+    estado('sin sesión','#fde68a');
+    ov('ovLogin',true);
   }
-  NUBE.cli=supabase.createClient(NUBE.url,NUBE.key);
-  const {data}=await NUBE.cli.auth.getSession();
-  if(data.session) await sesionLista(data.session.user);
-  else { estado('sin sesión','#fde68a'); ov('ovLogin',true); }
 })();
 </script>
 </body>

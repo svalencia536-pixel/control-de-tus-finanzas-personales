@@ -1,0 +1,16 @@
+{
+  "name": "finanzas-personales",
+  "version": "2.0.0",
+  "description": "Control de finanzas personales del hogar, con cuentas y datos compartidos",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "bcryptjs": "3.0.2",
+    "cookie-parser": "1.4.7",
+    "express": "4.21.2",
+    "jsonwebtoken": "9.0.2",
+    "pg": "8.13.1"
+  }
+}

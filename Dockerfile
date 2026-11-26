@@ -1,9 +1,19 @@
-# Sitio estático servido con Caddy. Imagen final ~50 MB, arranca en menos de un segundo.
-FROM caddy:2-alpine
+# Servidor Node que sirve la aplicación y expone la API sobre Postgres.
+FROM node:22-alpine
 
-COPY Caddyfile /etc/caddy/Caddyfile
-COPY index.html /srv/index.html
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Las dependencias se instalan antes de copiar el resto: así Railway reutiliza
+# esta capa y los despliegues de solo-HTML son mucho más rápidos.
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev --no-audit --no-fund
+
+COPY server.js ./
+COPY index.html ./
+
+# No correr como root dentro del contenedor
+USER node
 
 EXPOSE 8080
-
-CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+CMD ["node", "server.js"]
