@@ -84,6 +84,13 @@ async function migrar() {
   await pool.query(`alter table movimientos add column if not exists creado_por uuid references usuarios(id) on delete set null`);
   await pool.query(`alter table maestros    add column if not exists hogar_id uuid references hogares(id) on delete cascade`);
 
+  /* La versión anterior guardaba las filas por persona y exigía user_id. Ahora
+     la columna que manda es hogar_id, así que esas restricciones deben soltarse
+     o cualquier inserción falla. user_id se conserva solo como histórico. */
+  await pool.query(`alter table movimientos alter column user_id drop not null`);
+  await pool.query(`alter table maestros    drop constraint if exists maestros_pkey`);
+  await pool.query(`alter table maestros    alter column user_id drop not null`);
+
   /* Cada usuario que todavía no tenga hogar recibe el suyo, y sus datos se
      mudan a él. Sin esto, quien ya se había registrado perdería lo suyo. */
   const { rows: sinHogar } = await pool.query('select id from usuarios where hogar_id is null');
