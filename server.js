@@ -461,6 +461,21 @@ app.post('/api/admin/enlace-recuperacion', async (req, res) => {
   } catch (e) { console.error('enlace', e); res.status(500).json({ error: 'error' }); }
 });
 
+/* Listado de cuentas, para saber con qué correo se registró alguien cuando
+   no lo recuerda. Protegido por el mismo secreto de administración. */
+app.get('/api/admin/cuentas', async (req, res) => {
+  try {
+    if (!ADMIN || req.get('x-admin-secret') !== ADMIN)
+      return res.status(403).json({ error: 'No autorizado' });
+    const { rows } = await pool.query(
+      `select u.correo, u.nombre, u.creado, h.codigo,
+              (select count(*) from movimientos m where m.hogar_id=u.hogar_id) as movs
+         from usuarios u left join hogares h on h.id=u.hogar_id
+        order by u.creado desc limit 100`);
+    res.json({ total: rows.length, cuentas: rows });
+  } catch (e) { res.status(500).json({ error: 'error' }); }
+});
+
 app.post('/api/recuperar', async (req, res) => {
   try {
     const token = String(req.body?.token || '');
