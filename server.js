@@ -17,7 +17,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pg from 'pg';
 import webpush from 'web-push';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -120,6 +120,18 @@ async function migrar() {
       creado     timestamptz not null default now()
     );
     create index if not exists avisos_user on avisos (user_id);
+  `);
+
+  /* Enlaces de un solo uso para volver a poner la contraseña. Se guarda el
+     hash del token, no el token: si alguien leyera la base, no podría usarlo. */
+  await pool.query(`
+    create table if not exists recuperaciones (
+      token_hash text primary key,
+      user_id    uuid not null references usuarios(id) on delete cascade,
+      expira     timestamptz not null,
+      usado      timestamptz,
+      creado     timestamptz not null default now()
+    );
   `);
 
   await pool.query(`create index if not exists mov_hogar_fecha on movimientos (hogar_id, fecha desc)`);
@@ -423,6 +435,96 @@ app.post('/api/importar', conSesion, async (req, res) => {
     console.error('importar', e);
     res.status(500).json({ error: 'No se pudo restaurar el respaldo.' });
   } finally { cli.release(); }
+});
+
+/* ───────────────────────── recuperar la contraseña ─────────────────────────
+   Todavía no hay envío de correo, así que el enlace lo genera quien administra
+   y se lo entrega al dueño de la cuenta. El enlace caduca y sirve una sola vez;
+   la contraseña nueva la escribe el usuario, nunca pasa por terceros. */
+const ADMIN = process.env.ADMIN_SECRET || '';
+const hashToken = t => createHash('sha256').update(t).digest('hex');
+
+app.post('/api/admin/enlace-recuperacion', async (req, res) => {
+  try {
+    if (!ADMIN || req.get('x-admin-secret') !== ADMIN)
+      return res.status(403).json({ error: 'No autorizado' });
+    const correo = String(req.body?.correo || '').trim().toLowerCase();
+    const { rows } = await pool.query('select id from usuarios where correo=$1', [correo]);
+    if (!rows.length) return res.status(404).json({ error: 'No hay cuenta con ese correo' });
+
+    const token = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
+    const expira = new Date(Date.now() + 36e5);        // una hora
+    await pool.query('delete from recuperaciones where user_id=$1 and usado is null', [rows[0].id]);
+    await pool.query('insert into recuperaciones (token_hash,user_id,expira) values ($1,$2,$3)',
+      [hashToken(token), rows[0].id, expira]);
+    res.json({ enlace: `${req.protocol}://${req.get('host')}/recuperar?t=${token}`, expira });
+  } catch (e) { console.error('enlace', e); res.status(500).json({ error: 'error' }); }
+});
+
+app.post('/api/recuperar', async (req, res) => {
+  try {
+    const token = String(req.body?.token || '');
+    const clave = String(req.body?.clave || '');
+    if (clave.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
+    const { rows } = await pool.query(
+      `select r.user_id, u.correo from recuperaciones r join usuarios u on u.id=r.user_id
+        where r.token_hash=$1 and r.usado is null and r.expira > now()`, [hashToken(token)]);
+    if (!rows.length) return res.status(400).json({ error: 'Este enlace ya se usó o venció. Pide uno nuevo.' });
+
+    const hash = await bcrypt.hash(clave, 12);
+    await pool.query('update usuarios set clave_hash=$1 where id=$2', [hash, rows[0].user_id]);
+    await pool.query('update recuperaciones set usado=now() where token_hash=$1', [hashToken(token)]);
+    /* Se cierran las sesiones abiertas en otros equipos: si alguien había
+       entrado con la clave vieja, deja de tener acceso. */
+    darSesion(res, rows[0].user_id);
+    res.json({ ok: true, correo: rows[0].correo });
+  } catch (e) { console.error('recuperar', e); res.status(500).json({ error: 'No se pudo cambiar la contraseña.' }); }
+});
+
+/* Página mínima para escribir la contraseña nueva */
+app.get('/recuperar', (req, res) => {
+  res.type('html').send(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Nueva contraseña · Finanzas FVR</title>
+<style>
+:root{--p:#1c5cab;--bg:#f5f7fa;--card:#fff;--tx:#11161d;--tx2:#5b6472;--bd:#e3e7ec;--bad:#b02525;--ok:#006300}
+@media(prefers-color-scheme:dark){:root{--p:#3987e5;--bg:#101620;--card:#19212e;--tx:#eef1f6;--tx2:#9aa5b4;--bd:#2a3444;--bad:#f08a8a;--ok:#3ec93e}}
+*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+background:var(--bg);color:var(--tx);display:grid;place-items:center;min-height:100vh;margin:0;padding:20px}
+.c{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:26px;max-width:400px;width:100%}
+h1{font-size:19px;margin:0 0 6px}p{font-size:13px;color:var(--tx2);line-height:1.6;margin:0 0 16px}
+label{display:block;font-size:11px;font-weight:700;color:var(--tx2);text-transform:uppercase;letter-spacing:.4px;margin:0 0 5px}
+input{width:100%;padding:13px;border:1px solid var(--bd);border-radius:8px;font-size:16px;margin-bottom:12px;
+background:var(--bg);color:var(--tx)}
+button{width:100%;padding:14px;background:var(--p);color:#fff;border:0;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer}
+button:disabled{opacity:.6}
+.m{font-size:13px;font-weight:600;margin-top:12px;line-height:1.5}
+</style></head><body><div class="c">
+<h1>🔑 Nueva contraseña</h1>
+<p>Escribe una contraseña nueva. Que sea larga y que no uses en otro sitio: es lo único que protege tus datos.</p>
+<label for="c1">Contraseña nueva</label><input type="password" id="c1" autocomplete="new-password" placeholder="Mínimo 8 caracteres">
+<label for="c2">Repítela</label><input type="password" id="c2" autocomplete="new-password" placeholder="La misma">
+<button id="b">Guardar y entrar</button>
+<div class="m" id="m"></div>
+</div><script>
+const p=new URLSearchParams(location.search), t=p.get('t')||'';
+const m=document.getElementById('m'), b=document.getElementById('b');
+if(!t){ m.style.color='var(--bad)'; m.textContent='Enlace incompleto. Pide uno nuevo.'; b.disabled=true; }
+b.onclick=async()=>{
+  const a=document.getElementById('c1').value, c=document.getElementById('c2').value;
+  m.style.color='var(--bad)';
+  if(a.length<8) return m.textContent='Debe tener al menos 8 caracteres.';
+  if(a!==c)      return m.textContent='Las dos no coinciden.';
+  b.disabled=true; m.style.color='var(--tx2)'; m.textContent='Guardando…';
+  try{
+    const r=await fetch('/api/recuperar',{method:'POST',headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',body:JSON.stringify({token:t,clave:a})});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'No se pudo');
+    m.style.color='var(--ok)'; m.textContent='Listo. Entrando…';
+    setTimeout(()=>location.href='/',1200);
+  }catch(e){ m.style.color='var(--bad)'; m.textContent=e.message; b.disabled=false; }
+};
+</script></body></html>`);
 });
 
 /* ───────────────────────── recordatorio diario ─────────────────────────
